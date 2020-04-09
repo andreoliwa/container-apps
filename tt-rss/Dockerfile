@@ -6,14 +6,15 @@ RUN apt-get update
 ENV TERM xterm-256color
 
 # Install PostgreSQL PDO https://github.com/docker-library/php/issues/221#issuecomment-254153971
-RUN apt-get install -y libpq-dev libicu-dev cron sudo && \
+RUN apt-get install -y libpq-dev libicu-dev cron sudo git && \
     docker-php-ext-configure pgsql -with-pgsql=/usr/local/pgsql && \
+    # Install intl to avoid this error:
+    # PHP UConverter class is missing, it's provided by the Internationalization (intl) module.
     docker-php-ext-install pdo pdo_pgsql pgsql intl && \
     groupadd ttrss -g 1001 && \
-    useradd ttrss -m -u 1001 -g ttrss
-RUN apt-get install -y git
-RUN git clone --progress --verbose https://git.tt-rss.org/fox/tt-rss.git /var/www/html/
-RUN chown -R ttrss:ttrss /var/www/html
+    useradd ttrss -m -u 1001 -g ttrss && \
+    git clone --progress --verbose https://git.tt-rss.org/fox/tt-rss.git /var/www/html/ && \
+    chown -R ttrss:ttrss /var/www/html
 
 # https://github.com/docker-library/php/blob/d97098c8c6af46ae1211e65ff052278ab39ba45c/7.2/stretch/apache/Dockerfile
 ENV APACHE_RUN_GROUP=ttrss
