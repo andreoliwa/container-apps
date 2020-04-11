@@ -65,5 +65,5 @@ services:
     volumes:
       - ~/Library/Caches/mayan:/var/lib/mayan_cache
       - ~/OneDrive/Apps/Mayan/lib:/var/lib/mayan
-      - ~/OneDrive/Apps/Mayan/staging:/srv/staging
-      - ~/OneDrive/Apps/Mayan/watch:/srv/watch
+      - ~/OneDrive/Apps/Mayan/Staging:/srv/staging
+      # - ~/OneDrive/Apps/Mayan/Watch:/srv/watch
