@@ -1,8 +1,7 @@
 version: "2.1"
 
 networks:
-  net10:
-    name: postgres10
+  postgres10:
     external: true
   mayan:
     name: mayan
@@ -43,7 +42,7 @@ services:
       results:
         condition: service_healthy
     networks:
-      - net10
+      - postgres10
       - mayan
     environment:
       MAYAN_CELERY_BROKER_URL: amqp://mayan:mayan@broker:5672/mayan
