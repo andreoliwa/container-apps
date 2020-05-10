@@ -1,7 +1,7 @@
 version: "2.1"
 
 networks:
-  postgres10:
+  postgres12:
     external: true
   mayan:
     name: mayan
@@ -42,13 +42,13 @@ services:
       results:
         condition: service_healthy
     networks:
-      - postgres10
+      - postgres12
       - mayan
     environment:
       MAYAN_CELERY_BROKER_URL: amqp://mayan:mayan@broker:5672/mayan
       MAYAN_CELERY_RESULT_BACKEND: redis://results:6379/0
       MAYAN_DATABASE_ENGINE: django.db.backends.postgresql
-      MAYAN_DATABASE_HOST: postgres10
+      MAYAN_DATABASE_HOST: postgres12
       MAYAN_DATABASE_NAME: mayan
       MAYAN_DATABASE_USER: mayan
       MAYAN_DATABASE_PASSWORD: ${MAYAN_DATABASE_PASSWORD}

@@ -6,15 +6,10 @@ volumes:
   postgres12:
     driver: local
     name: postgres12
-  postgres10:
-    driver: local
-    name: postgres10
 
 networks:
   postgres12:
     name: postgres12
-  postgres10:
-    name: postgres10
 
 services:
   postgres12:
@@ -38,25 +33,3 @@ services:
       - ~/Dropbox/Backup:/var/backups/
     networks:
       - postgres12
-
-  postgres10:
-    # https://registry.hub.docker.com/_/postgres
-    image: postgres:10
-    restart: unless-stopped
-    container_name: postgres10
-    # Those are also the default values, left here for clarity. This will be the superuser.
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    # https://docs.docker.com/compose/compose-file/#/expose
-    expose:
-      - "5432"
-    # https://docs.docker.com/compose/compose-file/#/ports
-    ports:
-      - "7710:5432"
-    # Use a separate volume that is persisted even if the container is deleted
-    volumes:
-      - postgres10:/var/lib/postgresql/data
-      - ~/Dropbox/Backup:/var/backups/
-    networks:
-      - postgres10

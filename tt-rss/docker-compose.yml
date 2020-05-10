@@ -11,5 +11,5 @@ services:
 
 networks:
   net10:
-    name: postgres10
+    name: postgres12
     external: true
