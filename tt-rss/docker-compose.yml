@@ -5,11 +5,11 @@ services:
     container_name: ttrss
     build: .
     networks:
-      - net10
+      - postgres12
     ports:
       - "8002:80"
 
 networks:
-  net10:
+  postgres12:
     name: postgres12
     external: true
