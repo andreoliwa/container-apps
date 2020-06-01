@@ -14,7 +14,7 @@ To restore a database dump:
 
 1. Connect to the container.
    ```bash
-   db exec -T postgres12 psql -U postgres
+   db exec postgres12 psql -U postgres
    ```
 2. Drop and recreate the database.
    ```sql
