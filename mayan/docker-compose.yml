@@ -63,6 +63,6 @@ services:
       - "8001:8000"
     volumes:
       - ~/Library/Caches/mayan:/var/lib/mayan_cache
-      - ~/OneDrive/Apps/Mayan/lib:/var/lib/mayan
-      - ~/OneDrive/Apps/Mayan/Staging:/srv/staging
+      - ~/OneDrive/Apps/mayan/lib:/var/lib/mayan
+      - ~/OneDrive/Documents/Mayan_Staging:/srv/staging
       # - ~/OneDrive/Apps/Mayan/Watch:/srv/watch
