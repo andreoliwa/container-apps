@@ -18,6 +18,10 @@
   CREATE DATABASE redmine;
   GRANT ALL PRIVILEGES ON DATABASE redmine TO redmine;
   ```
-- Spin up Redmine with `redmine up`
+- Connect to the database with the newly created userone of these commands:
+  - `pgcli postgresql://redmine:$REDMINE_DB_PASSWORD@localhost:7712`
+  - `db exec postgres12 psql -U redmine`
+- [Restore the database if you have a backup](../postgres/README.md)
+- Spin up Redmine with `redmine up` or `redmine up -d`
 - Wait for the server to come up, then [login with the default admin/admin user/pass](https://github.com/docker-library/docs/tree/master/redmine#accessing-the-application)
 - Start using Redmine: Change the password, create users, create projects...
