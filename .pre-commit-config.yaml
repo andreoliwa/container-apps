@@ -1,0 +1,24 @@
+# https://pre-commit.com
+# https://pre-commit.com/hooks.html
+# https://pre-commit.com/#creating-new-hooks
+# Thanks to https://github.com/sloria/environs/blob/master/.pre-commit-config.yaml
+
+# https://pre-commit.ci/#configuration
+ci:
+  skip: [local-nitpick, generate-docs, pylint]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v3.4.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v2.2.1
+    hooks:
+      - id: prettier
+        stages: [commit]
+  - repo: https://github.com/openstack/bashate
+    rev: 2.0.0
+    hooks:
+      - id: bashate
