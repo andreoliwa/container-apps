@@ -14,7 +14,7 @@ networks:
 services:
   postgres12:
     # https://registry.hub.docker.com/_/postgres
-    image: postgres:12
+    image: postgres:13
     restart: unless-stopped
     container_name: postgres12
     # Those are also the default values, left here for clarity. This will be the superuser.
