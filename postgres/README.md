@@ -5,7 +5,8 @@
 To dump a database (with date/time on the file name):
 
 ```bash
-db exec -T postgres12 pg_dump -U postgres [database_name] > /path/to/dump_of_a_single_database_$(date "+%Y-%m-%d-%H-%M-%S").sql
+cd ~/container-apps
+invoke --dry db-dump [database_name]
 ```
 
 ## Restore a single database
@@ -26,3 +27,7 @@ To restore a database dump:
    ```bash
    db exec -T postgres12 psql -U [user_name] < /path/to/dump_of_a_single_database.sql
    ```
+
+## Upgrade Postgres
+
+[How to Upgrade PostgreSQL in Docker and Kubernetes - CloudyTuts](https://www.cloudytuts.com/tutorials/docker/how-to-upgrade-postgresql-in-docker-and-kubernetes/)
