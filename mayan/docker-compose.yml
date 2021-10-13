@@ -35,7 +35,8 @@ services:
       - results:/data
   mayan:
     container_name: mayan-app
-    image: mayanedms/mayanedms:latest
+    # Pin the correct version; see the recommended image tag on https://docs.mayan-edms.com/chapters/docker/install_simple.html#docker-install
+    image: mayanedms/mayanedms:s4
     depends_on:
       broker:
         condition: service_healthy
