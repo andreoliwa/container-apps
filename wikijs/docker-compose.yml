@@ -1,0 +1,21 @@
+version: "3.5"
+
+networks:
+  postgres13:
+    external: true
+
+services:
+  wikijs:
+    container_name: wikijs
+    image: requarks/wiki:2
+    networks:
+      - postgres13
+    environment:
+      DB_TYPE: postgres
+      DB_HOST: postgres13
+      DB_PORT: 5432
+      DB_USER: wikijs
+      DB_PASS: ${WIKIJS_PASSWORD}
+      DB_NAME: wikijs
+    ports:
+      - "8004:3000"
