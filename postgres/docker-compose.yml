@@ -6,15 +6,15 @@ volumes:
   postgres12:
     driver: local
     name: postgres12
-  postgres13:
+  postgres14:
     driver: local
-    name: postgres13
+    name: postgres14
 
 networks:
   postgres12:
     name: postgres12
-  postgres13:
-    name: postgres13
+  postgres14:
+    name: postgres14
 
 # https://registry.hub.docker.com/_/postgres
 services:
@@ -39,10 +39,10 @@ services:
     networks:
       - postgres12
 
-  postgres13:
-    image: postgres:13
+  postgres14:
+    image: postgres:14
     restart: unless-stopped
-    container_name: postgres13
+    container_name: postgres14
     # Those are also the default values, left here for clarity. This will be the superuser.
     environment:
       POSTGRES_USER: postgres
@@ -52,10 +52,10 @@ services:
       - "5432"
     # https://docs.docker.com/compose/compose-file/#/ports
     ports:
-      - "7713:5432"
+      - "7714:5432"
     # Use a separate volume that is persisted even if the container is deleted
     volumes:
-      - postgres13:/var/lib/postgresql/data
+      - postgres14:/var/lib/postgresql/data
       - ~/OneDrive/Backup:/var/backups/
     networks:
-      - postgres13
+      - postgres14
