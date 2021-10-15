@@ -3,41 +3,44 @@ version: "3.5"
 # https://docs.docker.com/compose/compose-file/#volume-configuration-reference
 # https://docs.docker.com/engine/admin/volumes/volumes/
 volumes:
-  postgres12:
-    driver: local
-    name: postgres12
+  # Redmine is the last one using PostgreSQL 12; remove these lines when it's upgraded to PostgreSQL 14
+  # postgres12:
+  #   driver: local
+  #   name: postgres12
   postgres14:
     driver: local
     name: postgres14
 
 networks:
-  postgres12:
-    name: postgres12
+  # Redmine is the last one using PostgreSQL 12; remove these lines when it's upgraded to PostgreSQL 14
+  # postgres12:
+  #   name: postgres12
   postgres14:
     name: postgres14
 
 # https://registry.hub.docker.com/_/postgres
 services:
-  postgres12:
-    image: postgres:12
-    restart: unless-stopped
-    container_name: postgres12
-    # Those are also the default values, left here for clarity. This will be the superuser.
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    # https://docs.docker.com/compose/compose-file/#/expose
-    expose:
-      - "5432"
-    # https://docs.docker.com/compose/compose-file/#/ports
-    ports:
-      - "7712:5432"
-    # Use a separate volume that is persisted even if the container is deleted
-    volumes:
-      - postgres12:/var/lib/postgresql/data
-      - ~/OneDrive/Backup:/var/backups/
-    networks:
-      - postgres12
+  # Redmine is the last one using PostgreSQL 12; remove these lines when it's upgraded to PostgreSQL 14
+  # postgres12:
+  #   image: postgres:12
+  #   restart: unless-stopped
+  #   container_name: postgres12
+  #   # Those are also the default values, left here for clarity. This will be the superuser.
+  #   environment:
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+  #   # https://docs.docker.com/compose/compose-file/#/expose
+  #   expose:
+  #     - "5432"
+  #   # https://docs.docker.com/compose/compose-file/#/ports
+  #   ports:
+  #     - "7712:5432"
+  #   # Use a separate volume that is persisted even if the container is deleted
+  #   volumes:
+  #     - postgres12:/var/lib/postgresql/data
+  #     - ~/OneDrive/Backup:/var/backups/
+  #   networks:
+  #     - postgres12
 
   postgres14:
     image: postgres:14
