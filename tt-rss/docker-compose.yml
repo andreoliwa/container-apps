@@ -5,11 +5,14 @@ services:
     container_name: ttrss
     build: .
     networks:
-      - postgres12
+      # tt-rss can't connect to the PostgreSQL 12 database, it raises a PDO error
+      # Try this https://git.tt-rss.org/fox/ttrss-docker-compose
+      # Changing to PostgreSQL 14 anyway, in order to remove v12 soon.
+      - postgres14
     ports:
       - "8002:80"
 
 networks:
-  postgres12:
-    name: postgres12
+  postgres14:
+    name: postgres14
     external: true

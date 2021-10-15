@@ -4,7 +4,7 @@
 // *******************************************
 
 define('DB_TYPE', 'pgsql');
-define('DB_HOST', 'postgres12');
+define('DB_HOST', 'postgres14');
 define('DB_USER', 'ttrss');
 define('DB_NAME', 'ttrss');
 define('DB_PASS', 'ttrss');
