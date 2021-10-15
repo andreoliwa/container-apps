@@ -1,16 +1,18 @@
+# https://strapi.io/documentation/developer-docs/latest/setup-deployment-guides/installation/docker.html#creating-a-strapi-project
 version: "3"
 
 networks:
-  postgres12:
+  postgres14:
     external: true
 
 services:
   strapi:
     container_name: strapi
+    # https://hub.docker.com/r/strapi/strapi
     image: strapi/strapi
     environment:
       DATABASE_CLIENT: postgres
-      DATABASE_HOST: postgres12
+      DATABASE_HOST: postgres14
       DATABASE_PORT: 5432
       DATABASE_NAME: strapi
       DATABASE_USERNAME: strapi
@@ -18,8 +20,13 @@ services:
       # https://strapi.io/documentation/3.0.0-beta.x/getting-started/troubleshooting.html#why-can-t-i-create-or-update-content-types-in-production-staging
       # NODE_ENV: production
     networks:
-      - postgres12
+      - postgres14
     volumes:
+      # Change the database on a JSON file with:
+      # rg postgres14 strapi/ -l | xargs code
       - ./app:/srv/app
     ports:
       - "1337:1337"
+    # To fix the error 'Something went wrong installing the "sharp" module', uncomment this line:
+    # command: npm install --ignore-scripts=false --verbose
+    # See https://github.com/lovell/sharp/issues/2026#issuecomment-572175140
