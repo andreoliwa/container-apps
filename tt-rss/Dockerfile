@@ -1,4 +1,4 @@
-# TODO use this in the future: https://git.tt-rss.org/fox/ttrss-docker-compose
+# TODO fix: use this in the future: https://git.tt-rss.org/fox/ttrss-docker-compose
 
 # https://github.com/docker-library/docs/blob/master/php/README.md#with-apache
 FROM php:8-apache

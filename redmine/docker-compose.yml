@@ -18,7 +18,7 @@ services:
       - ~/OneDrive/Apps/Redmine/files:/usr/src/redmine/files
       # Themes should be manually downloaded to this directory below (the left one):
       # - ~/OneDrive/Apps/Redmine/themes:/usr/src/redmine/public/custom-themes
-      # TODO: Download custom themes inside the Dockerfile
+      # TODO feat: download custom themes inside the Dockerfile
 
 networks:
   postgres12:

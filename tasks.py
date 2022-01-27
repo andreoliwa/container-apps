@@ -4,12 +4,12 @@ from datetime import datetime
 from pathlib import Path
 import os
 import socket
-from invoke_home import print_error, run_command
+from conjuring.grimoire import print_error, run_command
 
 DB_USER = "postgres"
 POSTGRES_VERSION = 14
 POSTGRES_ENV = "POSTGRES_PASSWORD"
-DB_PASSWORD = os.environ[POSTGRES_ENV]
+DB_PASSWORD = os.environ.get(POSTGRES_ENV)
 BACKUP_PATH = Path("~/OneDrive/Backup").expanduser()
 
 
