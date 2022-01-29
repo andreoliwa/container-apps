@@ -3,7 +3,7 @@ version: "3.5"
 # https://docs.docker.com/compose/compose-file/#volume-configuration-reference
 # https://docs.docker.com/engine/admin/volumes/volumes/
 volumes:
-  # Redmine is the last one using PostgreSQL 12; remove these lines when it's upgraded to PostgreSQL 14
+  # TODO: fix: Redmine is the last one using PostgreSQL 12; remove these lines when it's upgraded to PostgreSQL 14
   # postgres12:
   #   driver: local
   #   name: postgres12
@@ -12,7 +12,7 @@ volumes:
     name: postgres14
 
 networks:
-  # Redmine is the last one using PostgreSQL 12; remove these lines when it's upgraded to PostgreSQL 14
+  # TODO: fix: Redmine is the last one using PostgreSQL 12; remove these lines when it's upgraded to PostgreSQL 14
   # postgres12:
   #   name: postgres12
   postgres14:
@@ -20,7 +20,7 @@ networks:
 
 # https://registry.hub.docker.com/_/postgres
 services:
-  # Redmine is the last one using PostgreSQL 12; remove these lines when it's upgraded to PostgreSQL 14
+  # TODO: fix: Redmine is the last one using PostgreSQL 12; remove these lines when it's upgraded to PostgreSQL 14
   # postgres12:
   #   image: postgres:12
   #   restart: unless-stopped
