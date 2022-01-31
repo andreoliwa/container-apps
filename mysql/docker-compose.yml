@@ -1,0 +1,31 @@
+version: "3.5"
+
+volumes:
+  mysql5-7:
+    driver: local
+    name: mysql5-7
+
+networks:
+  mysql5-7:
+    name: mysql5-7
+
+services:
+  mysql5-7:
+    image: mysql:5.7
+    container_name: mysql5-7
+    command: --default-authentication-plugin=mysql_native_password
+    environment:
+      # Replace by a real password on an  if this container will be used for production data
+      MYSQL_ROOT_PASSWORD: $MYSQL_PASSWORD
+    # https://docs.docker.com/compose/compose-file/#/expose
+    expose:
+      - "3306"
+    # https://docs.docker.com/compose/compose-file/#/ports
+    ports:
+      - "3306:3306"
+    # Use a separate volume that is persisted even if the container is deleted
+    volumes:
+      - mysql5-7:/var/lib/mysql
+      - "${MYSQL_DUMP_DIR}:/var/backups"
+    networks:
+      - mysql5-7
