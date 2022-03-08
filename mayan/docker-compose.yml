@@ -18,6 +18,8 @@ services:
   broker:
     container_name: mayan-broker
     image: healthcheck/rabbitmq
+    # https://docs.mayan-edms.com/parts/troubleshooting/docker.html#rabbitmq-is-not-being-persisting-messages-despite-using-docker-volumes
+    hostname: mayan-edms-rabbitmq
     environment:
       RABBITMQ_DEFAULT_USER: mayan
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
@@ -56,10 +58,16 @@ services:
       MAYAN_APT_INSTALLS: "tesseract-ocr-deu tesseract-ocr-por tesseract-ocr-ita"
       MAYAN_DOCUMENTS_LANGUAGE: deu
       MAYAN_TIME_ZONE: Europe/Berlin
-      # http://localhost:8001/#/settings/namespace/documents/
+      # http://mayan:8001/#/settings/namespaces/converter/
+      MAYAN_CONVERTER_ASSET_CACHE_STORAGE_BACKEND_ARGUMENTS: "{location: /var/lib/mayan_cache/converter_assets_cache}"
+      # http://mayan:8001/#/settings/namespaces/documents/
       MAYAN_DOCUMENTS_CACHE_STORAGE_BACKEND_ARGUMENTS: "{location: /var/lib/mayan_cache/document_cache}"
-      # http://localhost:8001/#/settings/namespace/sources/
-      MAYAN_SOURCES_STAGING_FILE_CACHE_STORAGE_BACKEND_ARGUMENTS: "{location: /var/lib/mayan_cache/staging_file_cache}"
+      MAYAN_DOCUMENTS_FILE_PAGE_IMAGE_CACHE_STORAGE_BACKEND_ARGUMENTS: "{location: /var/lib/mayan_cache/document_file_page_image_cache}"
+      MAYAN_DOCUMENTS_VERSION_PAGE_IMAGE_CACHE_STORAGE_BACKEND_ARGUMENTS: "{location: /var/lib/mayan_cache/document_version_page_image_cache}"
+      # http://mayan:8001/#/settings/namespaces/sources/
+      MAYAN_SOURCES_CACHE_STORAGE_BACKEND_ARGUMENTS: "{location: /var/lib/mayan_cache/source_cache}"
+      # http://mayan:8001/#/settings/namespaces/document_states/
+      MAYAN_WORKFLOWS_IMAGE_CACHE_STORAGE_BACKEND_ARGUMENTS : "{location: /var/lib/mayan_cache/workflows}"
     ports:
       - "8001:8000"
     volumes:
