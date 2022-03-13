@@ -71,6 +71,7 @@ services:
       # http://mayan:8001/#/settings/namespaces/search/
       # The Whoosh backend is not returning any results
       MAYAN_SEARCH_BACKEND: "mayan.apps.dynamic_search.backends.django.DjangoSearchBackend"
+      MAYAN_SEARCH_MATCH_ALL_DEFAULT_VALUE: true
     ports:
       - "8001:8000"
     volumes:
