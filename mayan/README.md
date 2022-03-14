@@ -1,8 +1,12 @@
 # Mayan EDMS
 
-- GitLab: https://gitlab.com/mayan-edms/mayan-edms
-- Docs: https://docs.mayan-edms.com
+- [Mayan EDMS / Mayan EDMS · GitLab](https://gitlab.com/mayan-edms/mayan-edms)
+- [Welcome to Mayan EDMS! — Mayan EDMS 4.2.1 documentation](https://docs.mayan-edms.com/)
+- [mayan-edms/Mayan-EDMS: Free Open Source Document Management System (mirror, no pull request or issues)](https://github.com/mayan-edms/Mayan-EDMS)
 - PDF: https://docs.mayan-edms.com/pdf/mayan/latest/mayan.pdf
+- [Mayan EDMS / API Examples · GitLab](https://gitlab.com/mayan-edms/api-examples)
+- Different UI, but not updated since Dec 2018: [zhoubear/open-paperless: Scan, index, and archive all of your paper documents (acquired by Mayan EDMS)](https://github.com/zhoubear/open-paperless)
+- Similar projects: [dms · GitHub Topics](https://github.com/topics/dms)
 
 # Setup
 
