@@ -84,6 +84,8 @@ services:
   gotenberg:
     image: thecodingmachine/gotenberg
     restart: unless-stopped
+    networks:
+      - paperless
     environment:
       DISABLE_GOOGLE_CHROME: 1
 
