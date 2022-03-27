@@ -41,7 +41,7 @@ networks:
 
 volumes:
   data:
-
+  redisdata:
 
 services:
   broker:
@@ -49,9 +49,11 @@ services:
     restart: unless-stopped
     networks:
       - paperless
+    volumes:
+      - redisdata:/data
 
   webserver:
-    image: jonaswinkler/paperless-ng:latest
+    image: ghcr.io/paperless-ngx/paperless-ngx:latest
     restart: unless-stopped
     depends_on:
       - broker
@@ -60,7 +62,7 @@ services:
     ports:
       - "8005:8000"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000"]
+      test: [ "CMD", "curl", "-f", "http://localhost:8000" ]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -69,25 +71,25 @@ services:
       - paperless
     volumes:
       - data:/usr/src/paperless/data
-      - ~/OneDrive/Apps/paperless-ng/media:/usr/src/paperless/media
-      - ~/OneDrive/Apps/paperless-ng/export:/usr/src/paperless/export
-      - ~/OneDrive/Apps/paperless-ng/consume:/usr/src/paperless/consume
+      - ~/OneDrive/Apps/paperless/media:/usr/src/paperless/media
+      - ~/OneDrive/Apps/paperless/export:/usr/src/paperless/export
+      - ~/OneDrive/Apps/paperless/consume:/usr/src/paperless/consume
     env_file: docker-compose.env
     environment:
       PAPERLESS_REDIS: redis://broker:6379
-      # https://paperless-ng.readthedocs.io/en/latest/configuration.html#required-services
+      # https://paperless-ngx.readthedocs.io/en/latest/configuration.html#required-services
       PAPERLESS_DBHOST: postgres14
       PAPERLESS_TIKA_ENABLED: 1
       PAPERLESS_TIKA_GOTENBERG_ENDPOINT: http://gotenberg:3000
       PAPERLESS_TIKA_ENDPOINT: http://tika:9998
 
   gotenberg:
-    image: thecodingmachine/gotenberg
+    image: gotenberg/gotenberg:7
     restart: unless-stopped
     networks:
       - paperless
     environment:
-      DISABLE_GOOGLE_CHROME: 1
+      CHROMIUM_DISABLE_ROUTES: 1
 
   tika:
     image: apache/tika
