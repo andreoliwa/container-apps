@@ -50,6 +50,9 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    # https://postgresqlco.nf/doc/en/param/max_connections/
+    # https://postgresqlco.nf/doc/en/param/shared_buffers/
+    command: postgres -c max_connections=150 -c shared_buffers=256MB
     # https://docs.docker.com/compose/compose-file/#/expose
     expose:
       - "5432"
