@@ -43,7 +43,7 @@ services:
   #     - postgres12
 
   postgres14:
-    image: postgres:14
+    image: postgres:15
     restart: unless-stopped
     container_name: postgres14
     # Those are also the default values, left here for clarity. This will be the superuser.
