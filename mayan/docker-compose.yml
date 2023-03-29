@@ -77,7 +77,7 @@ services:
     volumes:
       - ~/Library/Caches/mayan:/var/lib/mayan_cache
       # Change the database on YAML files in this dir with:
-      # rg postgres14 ~/OneDrive/Apps/mayan/ -l | xargs code
-      - ~/OneDrive/Apps/mayan/lib:/var/lib/mayan
-      - ~/OneDrive/Apps/mayan/watch:/srv/watch
-      - ~/OneDrive/Documents/Mayan_Staging:/srv/staging
+      # rg postgres14 ~/Dropbox/Apps/mayan/ -l | xargs code
+      - ~/Dropbox/Apps/mayan/lib:/var/lib/mayan
+      - ~/Dropbox/Apps/mayan/watch:/srv/watch
+      - ~/Dropbox/Documents/Mayan_Staging:/srv/staging
