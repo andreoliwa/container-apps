@@ -71,9 +71,9 @@ services:
       - paperless
     volumes:
       - data:/usr/src/paperless/data
-      - ~/Dropbox/Apps/paperless/media:/usr/src/paperless/media
-      - ~/Dropbox/Apps/paperless/export:/usr/src/paperless/export
-      - ~/Dropbox/Apps/paperless/consume:/usr/src/paperless/consume
+      - ~/OneDrive/Apps/paperless/media:/usr/src/paperless/media
+      - ~/OneDrive/Apps/paperless/export:/usr/src/paperless/export
+      - ~/OneDrive/Apps/paperless/consume:/usr/src/paperless/consume
     env_file: docker-compose.env
     environment:
       PAPERLESS_REDIS: redis://broker:6379
