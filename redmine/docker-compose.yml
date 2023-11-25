@@ -9,9 +9,9 @@ services:
     ports:
       - 8003:3000
     networks:
-      - postgres12
+      - postgres14
     environment:
-      REDMINE_DB_POSTGRES: postgres12
+      REDMINE_DB_POSTGRES: postgres14
       REDMINE_DB_USERNAME: redmine
       REDMINE_DB_PASSWORD: ${REDMINE_DB_PASSWORD}
     volumes:
@@ -21,6 +21,6 @@ services:
       # TODO feat: download custom themes inside the Dockerfile
 
 networks:
-  postgres12:
-    name: postgres12
+  postgres14:
+    name: postgres14
     external: true

@@ -1,4 +1,4 @@
-FROM redmine:4
+FROM redmine:5
 WORKDIR /usr/src/redmine
 
 COPY ./configuration.yml config/configuration.yml
@@ -8,6 +8,7 @@ RUN apt-get update \
     && bundle add 'rufus-scheduler' \
     \
     # Plug-in for Redmine (http://www.redmine.org/) to export project issues and versions as ICalendar (ICS) files
+    # Latest version only runs on Redmine 5
     && git clone https://github.com/buschmais/redmics.git plugins/redmine_ics_export \
     && bundle install --without development test \
     \
