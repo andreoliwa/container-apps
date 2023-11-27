@@ -1,7 +1,7 @@
 # paperless-ngx
 
 - [paperless-ngx/paperless-ngx: A supercharged version of paperless: scan, index and archive all your physical documents](https://github.com/paperless-ngx/paperless-ngx)
-- [Paperless — Paperless-ngx 1.6.0 documentation](https://paperless-ngx.readthedocs.io/en/latest/)
+- [Paperless-ngx](https://docs.paperless-ngx.com/)
 
 # Setup
 

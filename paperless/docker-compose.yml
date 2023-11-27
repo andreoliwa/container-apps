@@ -77,7 +77,7 @@ services:
     env_file: docker-compose.env
     environment:
       PAPERLESS_REDIS: redis://broker:6379
-      # https://paperless-ngx.readthedocs.io/en/latest/configuration.html#required-services
+      # https://docs.paperless-ngx.com/configuration/#required-services
       PAPERLESS_DBHOST: postgres14
       PAPERLESS_TIKA_ENABLED: 1
       PAPERLESS_TIKA_GOTENBERG_ENDPOINT: http://gotenberg:3000
