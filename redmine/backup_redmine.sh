@@ -5,7 +5,8 @@
 # - crontab -l
 
 HOME_DIR=$(dirname $(dirname $(dirname $(realpath $0))))
-BACKUP_DIR="$HOME_DIR/OneDrive/Backup"
+BACKUP_DIR="$HOME_DIR/OneDrive/Backup/$(hostname)/postgres14"
+mkdir -p $BACKUP_DIR
 
 echo "Remove empty backups"
 find "$BACKUP_DIR" -type f -size 0 -print -delete

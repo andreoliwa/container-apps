@@ -82,7 +82,7 @@ def db_dump(c, database, version=POSTGRES_VERSION, output_dir=""):
 
     full_dump_path = expanded_dir / f"{database}_{datetime_str}.sql"
     c.run(f"docker exec -it postgres{version} pg_dump -U postgres {database} > {full_dump_path}")
-    c.run(f"ls -l {str(expanded_dir)}", dry=False)
+    c.run(f"ls -lrth {str(expanded_dir)} | tail -n 20", dry=False)
 
 
 @task
