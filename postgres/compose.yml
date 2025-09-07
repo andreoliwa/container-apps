@@ -25,6 +25,8 @@ services:
     # https://postgresqlco.nf/doc/en/param/shared_buffers/
     # With only a couple of clients, 150 connections is overkill and wastes memory.
     # Cap connections and keep shared_buffers modest for a 4 GB host.
+    # log_min_duration_statement=1000 logs queries slower than 1s to help spot
+    # occasional slowdowns (view with docker logs postgres14).
     command: >-
       postgres
       -c max_connections=50
