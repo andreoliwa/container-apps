@@ -67,7 +67,7 @@ services:
       # http://mayan:8001/#/settings/namespaces/sources/
       MAYAN_SOURCES_CACHE_STORAGE_BACKEND_ARGUMENTS: "{location: /var/lib/mayan_cache/source_cache}"
       # http://mayan:8001/#/settings/namespaces/document_states/
-      MAYAN_WORKFLOWS_IMAGE_CACHE_STORAGE_BACKEND_ARGUMENTS : "{location: /var/lib/mayan_cache/workflows}"
+      MAYAN_WORKFLOWS_IMAGE_CACHE_STORAGE_BACKEND_ARGUMENTS: "{location: /var/lib/mayan_cache/workflows}"
       # http://mayan:8001/#/settings/namespaces/search/
       # The Whoosh backend is not returning any results
       MAYAN_SEARCH_BACKEND: "mayan.apps.dynamic_search.backends.django.DjangoSearchBackend"
