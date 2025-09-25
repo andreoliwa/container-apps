@@ -1,5 +1,3 @@
-version: "3.5"
-
 # https://docs.docker.com/compose/compose-file/#volume-configuration-reference
 # https://docs.docker.com/engine/admin/volumes/volumes/
 volumes:

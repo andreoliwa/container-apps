@@ -26,11 +26,16 @@ find "$BACKUP_DIR" -type f -size 0 -print -delete
 set -e
 # This file has the environment variables needed to connect to the database
 source $HOME_DIR/.config/dotfiles/local.env
-OUTPUT_FILE="${BACKUP_DIR}/${DATABASE}_$(date "+%Y-%m-%d-%H-%M-%S").sql"
-echo "Dumping the database to ${OUTPUT_FILE}..."
-COMMAND="$(which docker-compose) \
+OUTPUT_SQL_FILE="${BACKUP_DIR}/${DATABASE}_$(date "+%Y-%m-%d-%H-%M-%S").sql"
+echo "Dumping the database to ${OUTPUT_SQL_FILE}..."
+COMMAND="$(which docker) compose \
     -f $HOME_DIR/container-apps/postgres/compose.yml \
     exec -T postgres14 pg_dump -U postgres $DATABASE"
 echo "Running command: $COMMAND"
-$COMMAND > $OUTPUT_FILE
+$COMMAND > $OUTPUT_SQL_FILE
+
+echo "Compressing the backup file..."
+gzip "$OUTPUT_SQL_FILE"
+echo "Backup compressed to ${OUTPUT_SQL_FILE}.gz"
+
 ls -lhtr "${BACKUP_DIR}"
