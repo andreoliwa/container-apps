@@ -1,0 +1,14 @@
+services:
+  focalboard:
+    container_name: focalboard
+    image: mattermost/focalboard
+    platform: linux/amd64
+    restart: unless-stopped
+    ports:
+      - "8005:8000"
+    volumes:
+      - ~/OneDrive/Apps/Focalboard:/data
+    environment:
+      # Use SQLite for personal server setup
+      - FOCALBOARD_DB_TYPE=sqlite3
+      - FOCALBOARD_DB_PATH=/data/focalboard.db
