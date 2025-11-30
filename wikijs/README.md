@@ -4,27 +4,27 @@ Using [Requarks/wiki: Wiki.js | A modern and powerful wiki app built on Node.js]
 Replacing [aviaryan/VSCodeNotebook: 📝 Use VS Code as a reliable note-taking/journal application](https://github.com/aviaryan/VSCodeNotebook).
 
 1. Connect to the database container.
-   ```bash
-   inv db-connect
-   ```
+    ```bash
+    inv db-connect
+    ```
 2. Create user/database:
-   ```
-   CREATE USER wikijs WITH PASSWORD '<password here>';
-   CREATE DATABASE wikijs;
-   GRANT ALL PRIVILEGES ON DATABASE wikijs to wikijs;
-   ```
+    ```
+    CREATE USER wikijs WITH PASSWORD '<password here>';
+    CREATE DATABASE wikijs;
+    GRANT ALL PRIVILEGES ON DATABASE wikijs to wikijs;
+    ```
 3. Disconnect and connect as the WikiJS user:
-   ```
-   inv db-connect --user wikijs --password-env WIKIJS_PASSWORD --database wikijs
-   ```
+    ```
+    inv db-connect --user wikijs --password-env WIKIJS_PASSWORD --database wikijs
+    ```
 4. Run this on the database:
-   ```
-   CREATE EXTENSION pg_trgm;
-   ```
+    ```
+    CREATE EXTENSION pg_trgm;
+    ```
 5. Start WikiJS:
-   ```
-   inv up-logs wikijs
-   ```
+    ```
+    inv up-logs wikijs
+    ```
 6. Navigate to http://localhost:8004/ to complete the setup.
 7. Configure [the site title and turn off comments](http://localhost:8004/a/general).
 8. Configure [site tree navigation](http://localhost:8004/a/navigation).

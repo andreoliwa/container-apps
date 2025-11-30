@@ -1,0 +1,133 @@
+# TT-RSS (Tiny Tiny RSS) - Self-hosted RSS reader with keyword-based scoring
+# https://tt-rss.org/
+# https://github.com/tt-rss/tt-rss
+
+networks:
+  postgres17:
+    external: true
+    name: postgres17
+  ttrss:
+
+services:
+  web-nginx:
+    # Nginx web server for TT-RSS (PHP-FPM requires a web server)
+    image: ghcr.io/tt-rss/tt-rss-web-nginx:latest
+    container_name: ttrss-web
+    restart: unless-stopped
+    platform: linux/amd64
+    ports:
+      - "8002:80"
+    volumes:
+      - ${CONTAINER_APPS_DATA_DIR}/ttrss/data:/var/www/html:ro
+    networks:
+      - ttrss
+    depends_on:
+      - app
+    cpus: "0.2"
+    mem_limit: "128m"
+
+  app:
+    # Official TT-RSS image with PHP-FPM and PostgreSQL support
+    # TT-RSS doesn't use semantic versioning, uses rolling releases, so it's safe to use "latest"
+    image: ghcr.io/tt-rss/tt-rss:latest
+    container_name: ttrss-app
+    restart: unless-stopped
+    platform: linux/amd64
+    environment:
+      # Database connection
+      TTRSS_DB_TYPE: pgsql
+      TTRSS_DB_HOST: postgres17
+      TTRSS_DB_PORT: 5432
+      TTRSS_DB_NAME: ${TTRSS_DB_NAME}
+      TTRSS_DB_USER: ${TTRSS_DB_USER}
+      TTRSS_DB_PASS: ${TTRSS_DB_PASS}
+      ADMIN_USER_PASS: ${TTRSS_ADMIN_PASS}
+      # Application URL (must match the actual URL you use to access tt-rss)
+      TTRSS_SELF_URL_PATH: http://localhost:8002/tt-rss
+      # Disable automatic plugin updates on startup
+      TTRSS_NO_STARTUP_PLUGIN_UPDATES: 1
+    volumes:
+      - ${CONTAINER_APPS_DATA_DIR}/ttrss/data:/var/www/html
+      - ${CONTAINER_APPS_DATA_DIR}/ttrss/config:/opt/tt-rss/config.d:ro
+    networks:
+      - postgres17
+      - ttrss
+    cpus: "0.5"
+    mem_limit: "512m"
+
+  updater:
+    # Background daemon that fetches new articles from RSS feeds
+    # TT-RSS doesn't use semantic versioning, uses rolling releases, so it's safe to use "latest"
+    image: ghcr.io/tt-rss/tt-rss:latest
+    container_name: ttrss-updater
+    restart: unless-stopped
+    platform: linux/amd64
+    command: /opt/tt-rss/updater.sh
+    environment:
+      # Same database connection as app
+      TTRSS_DB_TYPE: pgsql
+      TTRSS_DB_HOST: postgres17
+      TTRSS_DB_PORT: 5432
+      TTRSS_DB_NAME: ${TTRSS_DB_NAME}
+      TTRSS_DB_USER: ${TTRSS_DB_USER}
+      TTRSS_DB_PASS: ${TTRSS_DB_PASS}
+      TTRSS_SELF_URL_PATH: http://localhost:8002/tt-rss
+      TTRSS_DAEMON_SLEEP_INTERVAL: 60
+      # Disable automatic plugin updates on startup
+      TTRSS_NO_STARTUP_PLUGIN_UPDATES: 1
+    volumes:
+      - ${CONTAINER_APPS_DATA_DIR}/ttrss/data:/var/www/html
+      - ${CONTAINER_APPS_DATA_DIR}/ttrss/config:/opt/tt-rss/config.d:ro
+    networks:
+      - postgres17
+      - ttrss
+    depends_on:
+      - app
+    cpus: "0.3"
+    mem_limit: "256m"
+
+  rsshub-internal:
+    # RSSHub - Generate RSS feeds for websites that don't provide them
+    # https://docs.rsshub.app/
+    # Uses date-based tags for versioning
+    image: diygod/rsshub:2024-11-29
+    container_name: rsshub-internal
+    restart: unless-stopped
+    environment:
+      CACHE_TYPE: redis
+      REDIS_URL: redis://redis:6379/
+    ports:
+      - "8006:1200"
+    networks:
+      - ttrss
+    depends_on:
+      - redis
+    cpus: "0.3"
+    mem_limit: "256m"
+
+  rsshub:
+    # Nginx proxy for RSSHub on port 80 (tt-rss strips non-standard ports from URLs)
+    # This is needed because the TT-RSS app container fetches feeds and needs to reach rsshub:80
+    image: nginx:alpine
+    container_name: rsshub
+    restart: unless-stopped
+    networks:
+      - ttrss
+    depends_on:
+      - rsshub-internal
+    volumes:
+      - ./rsshub-nginx.conf:/etc/nginx/nginx.conf:ro
+    cpus: "0.1"
+    mem_limit: "64m"
+
+  redis:
+    # Redis cache for RSSHub
+    image: redis:7.4-alpine
+    container_name: ttrss-redis
+    restart: unless-stopped
+    volumes:
+      - ${CONTAINER_APPS_DATA_DIR}/ttrss/redis:/data
+    networks:
+      - ttrss
+    cpus: "0.2"
+    mem_limit: "128m"

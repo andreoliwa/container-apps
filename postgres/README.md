@@ -14,20 +14,20 @@ invoke --dry db-dump [database_name]
 To restore a database dump:
 
 1. Connect to the container.
-   ```bash
-   db exec postgres14 psql -U postgres
-   ```
+    ```bash
+    db exec postgres14 psql -U postgres
+    ```
 2. Drop and recreate the database.
-   ```sql
-   DROP DATABASE [database_name];
-   CREATE DATABASE [database_name];
-   GRANT ALL PRIVILEGES ON DATABASE [database_name] TO [user_name];
-   ```
+    ```sql
+    DROP DATABASE [database_name];
+    CREATE DATABASE [database_name];
+    GRANT ALL PRIVILEGES ON DATABASE [database_name] TO [user_name];
+    ```
 3. Exit the container and restore the dump on the newly created database
    (`-d [database]` is optional: use it if the name of the database is not the same as the user).
-   ```bash
-   db exec -T postgres14 psql -U [user_name] -d [database] -f /var/backups/path/to/dump_of_a_single_database.sql
-   ```
+    ```bash
+    db exec -T postgres14 psql -U [user_name] -d [database] -f /var/backups/path/to/dump_of_a_single_database.sql
+    ```
 
 ## Upgrade Postgres
 

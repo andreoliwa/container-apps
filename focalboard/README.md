@@ -9,9 +9,9 @@ Focalboard is an open source, multilingual, self-hosted project management tool 
 # Setup
 
 1. Start Focalboard:
-   ```bash
-   focalboard up -d
-   ```
+    ```bash
+    focalboard up -d
+    ```
 2. Navigate to http://localhost:8005/ to access your Focalboard server.
 3. Create your first account (the first user becomes the admin).
 4. Start creating boards, cards, and organizing your projects!

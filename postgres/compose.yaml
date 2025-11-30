@@ -4,10 +4,15 @@ volumes:
   postgres14:
     driver: local
     name: postgres14
+  postgres17:
+    driver: local
+    name: postgres17
 
 networks:
   postgres14:
     name: postgres14
+  postgres17:
+    name: postgres17
 
 # https://registry.hub.docker.com/_/postgres
 services:
@@ -46,6 +51,46 @@ services:
     networks:
       - postgres14
     # Keep PG from starving the box; it’s not the bottleneck here.
+    cpus: "0.70" # ~70% of a vCPU
+    mem_limit: "1g"
+    # Postgres benefits from a larger /dev/shm than the default 64 MB
+    shm_size: "256m"
+
+  postgres17:
+    image: postgres:17.2
+    restart: unless-stopped
+    container_name: postgres17
+    # Those are also the default values, left here for clarity. This will be the superuser.
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    # https://postgresqlco.nf/doc/en/param/max_connections/
+    # https://postgresqlco.nf/doc/en/param/shared_buffers/
+    # With only a couple of clients, 150 connections is overkill and wastes memory.
+    # Cap connections and keep shared_buffers modest for a 4 GB host.
+    # log_min_duration_statement=1000 logs queries slower than 1s to help spot
+    # occasional slowdowns (view with docker logs postgres17).
+    command: >-
+      postgres
+      -c max_connections=50
+      -c shared_buffers=256MB
+      -c effective_cache_size=2GB
+      -c work_mem=8MB
+      -c maintenance_work_mem=128MB
+      -c log_min_duration_statement=1000
+    # https://docs.docker.com/compose/compose-file/#/expose
+    expose:
+      - "5432"
+    # https://docs.docker.com/compose/compose-file/#/ports
+    ports:
+      - "5433:5432"
+    # Use a separate volume that is persisted even if the container is deleted
+    volumes:
+      - postgres17:/var/lib/postgresql/data
+      - ~/OneDrive/Backup:/var/backups/
+    networks:
+      - postgres17
+    # Keep PG from starving the box; it's not the bottleneck here.
     cpus: "0.70" # ~70% of a vCPU
     mem_limit: "1g"
     # Postgres benefits from a larger /dev/shm than the default 64 MB
