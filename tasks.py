@@ -139,7 +139,6 @@ def setup_ttrss(c: Context) -> None:
 
     print("\n✅ TT-RSS setup complete!")
     print("\nNext steps:")
-    print("  1. cd tt-rss")
-    print("  2. docker compose up -d")
-    print("  3. Open http://localhost:181/")
-    print("  4. Login with user 'admin', password 'password' and change it immediately.")
+    print("  1. cd rss && docker compose up -d")
+    print("  2. Open http://localhost:8002/")
+    print("  3. Login with user 'admin', password 'password' and change it immediately.")
