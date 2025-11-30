@@ -1,7 +1,7 @@
 version: "3.5"
 
 networks:
-  postgres14:
+  postgres17:
     external: true
 
 services:
@@ -12,10 +12,10 @@ services:
     # Revert to version 2 once there is a new release: https://github.com/Requarks/wiki/releases
     # image: requarks/wiki:2
     networks:
-      - postgres14
+      - postgres17
     environment:
       DB_TYPE: postgres
-      DB_HOST: postgres14
+      DB_HOST: postgres17
       DB_PORT: 5432
       DB_USER: wikijs
       DB_PASS: ${WIKIJS_PASSWORD}

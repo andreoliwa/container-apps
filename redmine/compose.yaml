@@ -11,6 +11,7 @@ services:
     networks:
       - postgres14
     environment:
+      # TODO: use postgres17 on Redmine
       REDMINE_DB_POSTGRES: postgres14
       REDMINE_DB_USERNAME: redmine
       REDMINE_DB_PASSWORD: ${REDMINE_DB_PASSWORD}
