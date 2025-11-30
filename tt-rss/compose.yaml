@@ -122,7 +122,7 @@ services:
 
   redis:
     # Redis cache for RSSHub
-    image: redis:7.4-alpine
+    image: redis:8.4-alpine
     container_name: ttrss-redis
     restart: unless-stopped
     volumes:
