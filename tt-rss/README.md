@@ -13,13 +13,13 @@ Reddit, and more — and lets me rank by **my keywords**, not social popularity.
 - Fill the screen "Database settings" with values from `config.php`, from the variables `DB_*`:
 - Connect to the PostgreSQL database:
 
-          pgcli postgresql://postgres:$POSTGRES_PASSWORD@localhost:7710/postgres
+            pgcli postgresql://postgres:$POSTGRES_PASSWORD@localhost:7710/postgres
 
 - Create user and database on the pgcli prompt using SQL commands:
 
-          CREATE USER ttrss WITH PASSWORD 'ttrss';
-          CREATE DATABASE ttrss;
-          GRANT ALL ON DATABASE ttrss TO ttrss;
+            CREATE USER ttrss WITH PASSWORD 'ttrss';
+            CREATE DATABASE ttrss;
+            GRANT ALL ON DATABASE ttrss TO ttrss;
 
 - Click on "Test configuration" and fix problems until the connection works.
 - Click on "Initialize database".
