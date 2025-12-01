@@ -17,7 +17,7 @@ repos:
     rev: v4.0.0-alpha.8
     hooks:
       - id: prettier
-        stages: [commit]
+        stages: [pre-commit]
   - repo: https://github.com/openstack/bashate
     rev: 2.1.1
     hooks:
