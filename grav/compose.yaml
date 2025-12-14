@@ -1,0 +1,22 @@
+# Grav CMS - Modern Flat-File CMS
+# https://getgrav.org/
+# https://github.com/getgrav/grav
+
+services:
+  grav:
+    # LinuxServer.io Grav image (includes admin plugin by default)
+    # https://hub.docker.com/r/linuxserver/grav
+    image: linuxserver/grav:latest
+    container_name: grav
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Berlin
+    ports:
+      - "8007:80"
+    volumes:
+      # Persistent data: Grav installation, plugins, themes, user data
+      - ${CONTAINER_APPS_DATA_DIR}/grav:/config
+    cpus: "0.5"
+    mem_limit: "512m"

@@ -3,6 +3,7 @@
 # keep-sorted start
 alias db='docker compose -f ~/container-apps/postgres/compose.yaml'
 alias focalboard='docker compose -f ~/container-apps/focalboard/compose.yaml'
+alias grav='docker compose -f ~/container-apps/grav/compose.yaml'
 alias mayan='docker compose -f ~/container-apps/mayan/compose.yaml'
 alias mysql='docker compose -f ~/container-apps/mysql/compose.yaml'
 alias redmine='docker compose -f ~/container-apps/redmine/compose.yaml'

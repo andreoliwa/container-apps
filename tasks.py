@@ -2,6 +2,7 @@
 
 import os
 import socket
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -142,3 +143,43 @@ def setup_ttrss(c: Context) -> None:
     print("  1. cd rss && docker compose up -d")
     print("  2. Open http://localhost:8002/")
     print("  3. Login with user 'admin', password 'password' and change it immediately.")
+
+
+@task
+def setup_grav(c: Context) -> None:
+    """Set up Grav CMS: create data directory, start container, install themes and plugins."""
+    data_dir = os.environ.get("CONTAINER_APPS_DATA_DIR")
+
+    if not data_dir:
+        print_error("CONTAINER_APPS_DATA_DIR environment variable is required")
+        raise Exit(code=1)
+
+    data_dir_path = Path(data_dir).expanduser()
+
+    print("Step 1: Creating data directory...")
+    grav_dir = data_dir_path / "grav"
+    grav_dir.mkdir(parents=True, exist_ok=True)
+    print(f"  Created: {grav_dir}")
+
+    print("\nStep 2: Starting Grav container...")
+    c.run("cd grav && docker compose up -d")
+
+    print("\nStep 3: Waiting for Grav to initialize (15 seconds)...")
+    time.sleep(15)
+
+    print("\nStep 4: Installing themes...")
+    themes = ["quark", "lingonberry", "future2021", "future"]
+    for theme in themes:
+        print(f"  Installing theme: {theme}")
+        c.run(f"docker exec -w /app/www/public grav bin/gpm install {theme} -y", warn=True)
+
+    print("\nStep 5: Installing Instagram plugin...")
+    c.run("docker exec -w /app/www/public grav bin/gpm install instagram -y", warn=True)
+
+    print("\n✅ Grav CMS setup complete!")
+    print("\nNext steps:")
+    print("  1. Open http://localhost:8007/admin")
+    print("  2. Create your admin account (first user becomes admin)")
+    print("  3. Configure your site and start creating content!")
+    print("\nInstalled themes: Quark, Lingonberry, Future2021, Future")
+    print("Installed plugins: Admin (pre-installed), Instagram")
