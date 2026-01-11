@@ -9,7 +9,7 @@ networks:
   ttrss:
 
 services:
-  web-nginx:
+  web:
     # Nginx web server for TT-RSS (PHP-FPM requires a web server)
     image: ghcr.io/tt-rss/tt-rss-web-nginx:latest
     container_name: ttrss-web
