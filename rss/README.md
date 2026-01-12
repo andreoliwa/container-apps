@@ -13,25 +13,66 @@ Reddit, and more — and lets me rank by **my keywords**, not social popularity.
 - Fill the screen "Database settings" with values from `config.php`, from the variables `DB_*`:
 - Connect to the PostgreSQL database:
 
-                    pgcli postgresql://postgres:$POSTGRES_PASSWORD@localhost:7710/postgres
+                      pgcli postgresql://postgres:$POSTGRES_PASSWORD@localhost:7710/postgres
 
 - Create user and database on the pgcli prompt using SQL commands:
 
-                    CREATE USER ttrss WITH PASSWORD 'ttrss';
-                    CREATE DATABASE ttrss;
-                    GRANT ALL ON DATABASE ttrss TO ttrss;
+                      CREATE USER ttrss WITH PASSWORD 'ttrss';
+                      CREATE DATABASE ttrss;
+                      GRANT ALL ON DATABASE ttrss TO ttrss;
 
 - Click on "Test configuration" and fix problems until the connection works.
 - Click on "Initialize database".
 
-## Plugins
+## Development Setup
 
-Plugins are installed in `$CONTAINER_APPS_DATA_DIR/ttrss/data/tt-rss/plugins.local/`.
-They are usually Git repositories clones in that directory.
+This setup uses a **local clone** of the TT-RSS repository for development and customization:
 
-Plugins configured:
+1. **Clone the TT-RSS repository** to your local machine:
 
-- [GitHub - supahgreg/ttrss-af-notifications: Adds a filter action to receive JavaScript-based notifications.](https://github.com/supahgreg/ttrss-af-notifications?tab=readme-ov-file)
+    ```bash
+    git clone https://git.tt-rss.org/fox/tt-rss.git /path/to/tt-rss
+    export TTRSS_REPO_DIR=/path/to/tt-rss
+    ```
+
+2. **Docker builds from the local clone**: The `compose.yaml` file builds the Docker image from your local repository (
+   specified by `${TTRSS_REPO_DIR}`), allowing you to modify the source code and rebuild as needed.
+
+3. **Plugins must be installed in the local repository**: Install plugins in `${TTRSS_REPO_DIR}/plugins.local/`
+   directory. They are typically Git repository clones:
+    ```bash
+    cd ${TTRSS_REPO_DIR}/plugins.local/
+    git clone https://github.com/username/plugin-name.git
+    ```
+
+### Updating the local clone of TT-RSS
+
+1. Stop the TT-RSS containers:
+    ```bash
+    rss down
+    ```
+2. Go to the repository directory:
+    ```bash
+    cd ${TTRSS_REPO_DIR}
+    ```
+3. If you have [conjuring](https://github.com/andreoliwa/conjuring)) installed, run this to synchronize your fork with
+   the main repository:
+    ```bash
+    invoke fork.sync
+    ```
+4. Pull the latest images:
+    ```bash
+    rss pull
+    ```
+5. Start all containers and follow logs:
+    ```bash
+    rss up -d; rss logs -f
+    ```
+
+### Configured Plugins
+
+- [ttrss-af-notifications](https://github.com/supahgreg/ttrss-af-notifications) - Adds a filter action to receive
+  JavaScript-based notifications
 
 ## Requirements & Goals
 
@@ -109,14 +150,23 @@ Plugins configured:
 
 ### Prerequisites
 
-1. **PostgreSQL 17** must be running (see `../postgres/compose.yml`)
-2. **Environment variables** must be set (add to your shell profile):
+1. **Clone TT-RSS repository locally**:
 
     ```bash
-    export CONTAINER_APPS_DATA_DIR=~/OneDrive/Apps/
+    git clone https://git.tt-rss.org/fox/tt-rss.git ~/tt-rss
+    ```
+
+2. **PostgreSQL 17** must be running (see `../postgres/compose.yml`)
+
+3. **Environment variables** must be set (add to your shell profile):
+
+    ```bash
+    export CONTAINER_APPS_DATA_DIR=~/data/
+    export TTRSS_REPO_DIR=~/tt-rss
     export TTRSS_DB_NAME=ttrss
     export TTRSS_DB_USER=ttrss
     export TTRSS_DB_PASS=<your-secure-password>
+    export TTRSS_ADMIN_PASS=<admin-password>
     export POSTGRES_PASSWORD=<postgres-superuser-password>
     ```
 
@@ -155,8 +205,9 @@ Plugins configured:
 - Some RSSHub routes (Twitter/X, Instagram, YouTube) may require **proxies, cookies, or tokens** to be reliable due to
   rate limits and anti-bot measures.
 - Keep Redis enabled for caching; it reduces load and speeds up feeds.
-- Back up volumes: `${CONTAINER_APPS_DATA_DIR}/ttrss/{data,config,redis}` and PostgreSQL database.
+- Back up volumes: `${CONTAINER_APPS_DATA_DIR}/rss/{config,redis}`, `${TTRSS_REPO_DIR}`, and PostgreSQL database.
 - Export OPML from TTRSS for feed portability.
+- TT-RSS uses rolling releases (no semantic versioning), so `latest` tag is safe to use.
 
 ## Alternatives considered (and why discarded)
 

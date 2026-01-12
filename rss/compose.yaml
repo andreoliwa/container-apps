@@ -2,6 +2,17 @@
 # https://tt-rss.org/
 # https://github.com/tt-rss/tt-rss
 
+# Shared environment variables for TT-RSS services
+x-shared-env: &shared-env
+  TTRSS_DB_TYPE: pgsql
+  TTRSS_DB_HOST: postgres17
+  TTRSS_DB_PORT: 5432
+  TTRSS_DB_NAME: ${TTRSS_DB_NAME}
+  TTRSS_DB_USER: ${TTRSS_DB_USER}
+  TTRSS_DB_PASS: ${TTRSS_DB_PASS}
+  TTRSS_SELF_URL_PATH: http://localhost:8002/tt-rss
+  TTRSS_NO_STARTUP_PLUGIN_UPDATES: 1
+
 networks:
   postgres17:
     external: true
@@ -9,46 +20,23 @@ networks:
   ttrss:
 
 services:
-  web:
-    # Nginx web server for TT-RSS (PHP-FPM requires a web server)
-    image: ghcr.io/tt-rss/tt-rss-web-nginx:latest
-    container_name: ttrss-web
-    restart: unless-stopped
-    platform: linux/amd64
-    ports:
-      - "8002:80"
-    volumes:
-      - ${CONTAINER_APPS_DATA_DIR}/ttrss/data:/var/www/html:ro
-    networks:
-      - ttrss
-    depends_on:
-      - app
-    cpus: "0.2"
-    mem_limit: "128m"
-
   app:
     # Official TT-RSS image with PHP-FPM and PostgreSQL support
     # TT-RSS doesn't use semantic versioning, uses rolling releases, so it's safe to use "latest"
-    image: ghcr.io/tt-rss/tt-rss:latest
     container_name: ttrss-app
-    restart: unless-stopped
     platform: linux/amd64
+    image: ghcr.io/tt-rss/tt-rss:latest
     environment:
-      # Database connection
-      TTRSS_DB_TYPE: pgsql
-      TTRSS_DB_HOST: postgres17
-      TTRSS_DB_PORT: 5432
-      TTRSS_DB_NAME: ${TTRSS_DB_NAME}
-      TTRSS_DB_USER: ${TTRSS_DB_USER}
-      TTRSS_DB_PASS: ${TTRSS_DB_PASS}
+      <<: *shared-env
       ADMIN_USER_PASS: ${TTRSS_ADMIN_PASS}
-      # Application URL (must match the actual URL you use to access tt-rss)
-      TTRSS_SELF_URL_PATH: http://localhost:8002/tt-rss
-      # Disable automatic plugin updates on startup
-      TTRSS_NO_STARTUP_PLUGIN_UPDATES: 1
+      SKIP_RSYNC_ON_STARTUP: true
+    build:
+      dockerfile: ${TTRSS_REPO_DIR}/.docker/app/Dockerfile
+      context: ${TTRSS_REPO_DIR}
+    restart: unless-stopped
     volumes:
-      - ${CONTAINER_APPS_DATA_DIR}/ttrss/data:/var/www/html
-      - ${CONTAINER_APPS_DATA_DIR}/ttrss/config:/opt/tt-rss/config.d:ro
+      - ${TTRSS_REPO_DIR}:/var/www/html/tt-rss
+      - ${CONTAINER_APPS_DATA_DIR}/rss/config:/opt/tt-rss/config.d:ro
     networks:
       - postgres17
       - ttrss
@@ -58,33 +46,47 @@ services:
   updater:
     # Background daemon that fetches new articles from RSS feeds
     # TT-RSS doesn't use semantic versioning, uses rolling releases, so it's safe to use "latest"
-    image: ghcr.io/tt-rss/tt-rss:latest
     container_name: ttrss-updater
-    restart: unless-stopped
     platform: linux/amd64
-    command: /opt/tt-rss/updater.sh
+    image: ghcr.io/tt-rss/tt-rss:latest
     environment:
-      # Same database connection as app
-      TTRSS_DB_TYPE: pgsql
-      TTRSS_DB_HOST: postgres17
-      TTRSS_DB_PORT: 5432
-      TTRSS_DB_NAME: ${TTRSS_DB_NAME}
-      TTRSS_DB_USER: ${TTRSS_DB_USER}
-      TTRSS_DB_PASS: ${TTRSS_DB_PASS}
-      TTRSS_SELF_URL_PATH: http://localhost:8002/tt-rss
+      <<: *shared-env
       TTRSS_DAEMON_SLEEP_INTERVAL: 60
-      # Disable automatic plugin updates on startup
-      TTRSS_NO_STARTUP_PLUGIN_UPDATES: 1
+    build:
+      dockerfile: ${TTRSS_REPO_DIR}/.docker/app/Dockerfile
+      context: ${TTRSS_REPO_DIR}
+    restart: unless-stopped
     volumes:
-      - ${CONTAINER_APPS_DATA_DIR}/ttrss/data:/var/www/html
-      - ${CONTAINER_APPS_DATA_DIR}/ttrss/config:/opt/tt-rss/config.d:ro
+      - ${TTRSS_REPO_DIR}:/var/www/html/tt-rss
+      - ${CONTAINER_APPS_DATA_DIR}/rss/config:/opt/tt-rss/config.d:ro
     networks:
       - postgres17
       - ttrss
     depends_on:
       - app
+    command: /opt/tt-rss/updater.sh
     cpus: "0.3"
     mem_limit: "256m"
+
+  web-nginx:
+    # Nginx web server for TT-RSS (PHP-FPM requires a web server)
+    container_name: ttrss-web
+    platform: linux/amd64
+    image: ghcr.io/tt-rss/tt-rss-web-nginx:latest
+    build:
+      dockerfile: ${TTRSS_REPO_DIR}/.docker/app/Dockerfile
+      context: ${TTRSS_REPO_DIR}
+    restart: unless-stopped
+    ports:
+      - "8002:80"
+    volumes:
+      - ${TTRSS_REPO_DIR}:/var/www/html/tt-rss:ro
+    networks:
+      - ttrss
+    depends_on:
+      - app
+    cpus: "0.2"
+    mem_limit: "128m"
 
   rsshub-internal:
     # RSSHub - Generate RSS feeds for websites that don't provide them
@@ -126,7 +128,7 @@ services:
     container_name: ttrss-redis
     restart: unless-stopped
     volumes:
-      - ${CONTAINER_APPS_DATA_DIR}/ttrss/redis:/data
+      - ${CONTAINER_APPS_DATA_DIR}/rss/redis:/data
     networks:
       - ttrss
     cpus: "0.2"
