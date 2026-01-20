@@ -13,13 +13,13 @@ Reddit, and more — and lets me rank by **my keywords**, not social popularity.
 - Fill the screen "Database settings" with values from `config.php`, from the variables `DB_*`:
 - Connect to the PostgreSQL database:
 
-                      pgcli postgresql://postgres:$POSTGRES_PASSWORD@localhost:7710/postgres
+                        pgcli postgresql://postgres:$POSTGRES_PASSWORD@localhost:7710/postgres
 
 - Create user and database on the pgcli prompt using SQL commands:
 
-                      CREATE USER ttrss WITH PASSWORD 'ttrss';
-                      CREATE DATABASE ttrss;
-                      GRANT ALL ON DATABASE ttrss TO ttrss;
+                        CREATE USER ttrss WITH PASSWORD 'ttrss';
+                        CREATE DATABASE ttrss;
+                        GRANT ALL ON DATABASE ttrss TO ttrss;
 
 - Click on "Test configuration" and fix problems until the connection works.
 - Click on "Initialize database".
@@ -90,9 +90,11 @@ This setup uses a **local clone** of the TT-RSS repository for development and c
 
 - **Tiny Tiny RSS (TTRSS)** — Core reader with **filters, scoring, labels**, plugins, and a responsive UI.
     - Uses official maintained images from [tt-rss/tt-rss](https://github.com/tt-rss/tt-rss) (GitHub Container Registry)
-- **RSSHub + Redis** — Feed generator for non-RSS sources; enormous route catalog, good caching.
+- **[RSSHub](https://github.com/DIYgod/RSSHub) + Redis** — Feed generator for non-RSS sources; enormous route catalog, good caching.
     - `rsshub-internal`: The actual RSSHub service (port 1200)
     - `rsshub`: Nginx proxy on port 80 (works around TT-RSS port stripping bug)
+    - Browse routes: [RSSHub Documentation](https://docs.rsshub.app/)
+    - Browser extension for easy feed discovery: [RSSHub Radar](https://github.com/DIYgod/RSSHub-Radar)
 - **Postgres** — Backend for TTRSS.
 - **Docker Compose** — One-file bring-up on macOS.
 
@@ -119,7 +121,8 @@ This setup uses a **local clone** of the TT-RSS repository for development and c
     3. `http://rsshub/substack/<site>`
     4. `http://rsshub/youtube/channel/<id>`
     5. `http://rsshub/reddit/subreddit/<name>`
-    6. Browse all routes: http://localhost:8006/ or https://docs.rsshub.app/
+    6. Browse all routes: http://localhost:8006/ or [RSSHub Documentation](https://docs.rsshub.app/)
+    7. Use [RSSHub Radar](https://github.com/DIYgod/RSSHub-Radar) browser extension to discover feeds on any website
 5. On Android (same Wi-Fi), open `http://<mac-lan-ip>:8002/tt-rss` in the browser or:
     1. Use the **Tiny Tiny RSS** Android app
     2. Use **Fiery Feeds** or **Reeder** via the **Fever** plugin:
@@ -198,7 +201,8 @@ This setup uses a **local clone** of the TT-RSS repository for development and c
 5. **Access RSSHub**:
     1. Direct access (for browsing routes): http://localhost:8006/
     2. In TT-RSS feeds, use: `http://rsshub/...` (no port needed, proxy handles it)
-    3. Browse available routes at https://docs.rsshub.app/
+    3. Browse available routes at [RSSHub Documentation](https://docs.rsshub.app/)
+    4. Install [RSSHub Radar](https://github.com/DIYgod/RSSHub-Radar) browser extension to easily discover and subscribe to feeds
 
 ## Notes
 
