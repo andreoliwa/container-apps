@@ -74,7 +74,7 @@ services:
     platform: linux/amd64
     image: ghcr.io/tt-rss/tt-rss-web-nginx:latest
     build:
-      dockerfile: ${TTRSS_REPO_DIR}/.docker/app/Dockerfile
+      dockerfile: ${TTRSS_REPO_DIR}/.docker/web-nginx/Dockerfile
       context: ${TTRSS_REPO_DIR}
     restart: unless-stopped
     ports:
