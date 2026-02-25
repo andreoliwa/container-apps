@@ -19,6 +19,9 @@ networks:
     name: postgres17
   ttrss:
 
+volumes:
+  app:
+
 services:
   app:
     # Official TT-RSS image with PHP-FPM and PostgreSQL support
@@ -29,13 +32,9 @@ services:
     environment:
       <<: *shared-env
       ADMIN_USER_PASS: ${TTRSS_ADMIN_PASS}
-      SKIP_RSYNC_ON_STARTUP: true
-    build:
-      dockerfile: ${TTRSS_REPO_DIR}/.docker/app/Dockerfile
-      context: ${TTRSS_REPO_DIR}
     restart: unless-stopped
     volumes:
-      - ${TTRSS_REPO_DIR}:/var/www/html/tt-rss
+      - app:/var/www/html
       - ${CONTAINER_APPS_DATA_DIR}/rss/config:/opt/tt-rss/config.d:ro
     networks:
       - postgres17
@@ -52,12 +51,9 @@ services:
     environment:
       <<: *shared-env
       TTRSS_DAEMON_SLEEP_INTERVAL: 60
-    build:
-      dockerfile: ${TTRSS_REPO_DIR}/.docker/app/Dockerfile
-      context: ${TTRSS_REPO_DIR}
     restart: unless-stopped
     volumes:
-      - ${TTRSS_REPO_DIR}:/var/www/html/tt-rss
+      - app:/var/www/html
       - ${CONTAINER_APPS_DATA_DIR}/rss/config:/opt/tt-rss/config.d:ro
     networks:
       - postgres17
@@ -73,14 +69,11 @@ services:
     container_name: ttrss-web
     platform: linux/amd64
     image: ghcr.io/tt-rss/tt-rss-web-nginx:latest
-    build:
-      dockerfile: ${TTRSS_REPO_DIR}/.docker/web-nginx/Dockerfile
-      context: ${TTRSS_REPO_DIR}
     restart: unless-stopped
     ports:
       - "8002:80"
     volumes:
-      - ${TTRSS_REPO_DIR}:/var/www/html/tt-rss:ro
+      - app:/var/www/html:ro
     networks:
       - ttrss
     depends_on:

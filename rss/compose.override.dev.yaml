@@ -1,0 +1,30 @@
+# TT-RSS Development Override
+# This file overrides compose.yaml for local development of tt-rss itself
+# Usage: docker compose -f compose.yaml -f compose.override.dev.yaml up
+
+services:
+  app:
+    build:
+      dockerfile: ${TTRSS_REPO_DIR}/.docker/app/Dockerfile
+      context: ${TTRSS_REPO_DIR}
+    # Skip rsync on startup since we're mounting the local repository directly
+    # This prevents the container from copying files and allows live code changes
+    # Used by tt-rss Docker image startup scripts (.docker/app/startup.sh and update.sh)
+    environment:
+      SKIP_RSYNC_ON_STARTUP: true
+    volumes:
+      - ${TTRSS_REPO_DIR}:/var/www/html/tt-rss
+
+  updater:
+    build:
+      dockerfile: ${TTRSS_REPO_DIR}/.docker/app/Dockerfile
+      context: ${TTRSS_REPO_DIR}
+    volumes:
+      - ${TTRSS_REPO_DIR}:/var/www/html/tt-rss
+
+  web-nginx:
+    build:
+      dockerfile: ${TTRSS_REPO_DIR}/.docker/web-nginx/Dockerfile
+      context: ${TTRSS_REPO_DIR}
+    volumes:
+      - ${TTRSS_REPO_DIR}:/var/www/html/tt-rss:ro

@@ -105,7 +105,7 @@ def up_logs(c: Context, app: str) -> None:
 
 
 @task
-def setup_ttrss(c: Context) -> None:
+def rss_setup(c: Context) -> None:
     """Set up TT-RSS: start PostgreSQL 17, create database, create data directories."""
     db_name = os.environ.get("TTRSS_DB_NAME", "ttrss")
     db_user = os.environ.get("TTRSS_DB_USER", "ttrss")
@@ -183,3 +183,73 @@ def setup_grav(c: Context) -> None:
     print("  3. Configure your site and start creating content!")
     print("\nInstalled themes: Quark, Lingonberry, Future2021, Future")
     print("Installed plugins: Admin (pre-installed), Instagram")
+
+
+def _docker_compose_rss(c: Context, dev: bool, command: str, follow_logs: bool = False) -> None:
+    """Run docker compose with the appropriate compose files.
+
+    Args:
+        c: Invoke context
+        dev: If True, use dev mode with compose.override.dev.yaml
+        command: Docker compose command to run (e.g., "up -d", "down", "pull")
+        follow_logs: If True and command contains "up -d", follow logs after starting
+
+    """
+    # Get the container apps directory from environment or use default
+    container_apps_dir = os.environ.get("CONTAINER_APPS_DIR", "~/container-apps")
+    container_apps_path = Path(container_apps_dir).expanduser()
+
+    compose_files = f"-f {container_apps_path}/rss/compose.yaml"
+    if dev:
+        compose_files += f" -f {container_apps_path}/rss/compose.override.dev.yaml"
+
+    c.run(f"docker compose {compose_files} {command}")
+
+    if follow_logs and "up -d" in command:
+        c.run(f"docker compose {compose_files} logs -f")
+
+
+@task(
+    help={
+        "pull": "Update stack before starting (pull images in normal mode, or sync fork + build in dev mode)",
+        "dev": "Use dev mode (local tt-rss clone with vf_scored plugin)",
+    }
+)
+def rss_up(c: Context, pull: bool = False, dev: bool = False) -> None:
+    """Start the TT-RSS stack."""
+    ttrss_repo_dir = os.environ.get("TTRSS_REPO_DIR")
+
+    if pull:
+        if dev:
+            # Dev mode: sync fork, pull, build
+            if not ttrss_repo_dir:
+                print_error("TTRSS_REPO_DIR environment variable is required for dev mode")
+                raise Exit(code=1)
+
+            print("Dev mode: Syncing fork, pulling, and building...")
+            c.run(f"pushd {ttrss_repo_dir} && invoke fork.sync && popd")
+            _docker_compose_rss(c, dev=True, command="down")
+            _docker_compose_rss(c, dev=True, command="pull")
+            _docker_compose_rss(c, dev=True, command="build")
+        else:
+            # Normal mode: pull images
+            print("Normal mode: Pulling latest images...")
+            _docker_compose_rss(c, dev=False, command="down")
+            _docker_compose_rss(c, dev=False, command="pull")
+
+    # Start and follow logs
+    mode_name = "dev" if dev else "normal"
+    print(f"Starting TT-RSS stack in {mode_name} mode...")
+    _docker_compose_rss(c, dev=dev, command="up -d", follow_logs=True)
+
+
+@task(
+    help={
+        "dev": "Use dev mode (local tt-rss clone)",
+    }
+)
+def rss_down(c: Context, dev: bool = False) -> None:
+    """Stop the TT-RSS stack."""
+    mode_name = "dev" if dev else "normal"
+    print(f"Stopping TT-RSS stack in {mode_name} mode...")
+    _docker_compose_rss(c, dev=dev, command="down")

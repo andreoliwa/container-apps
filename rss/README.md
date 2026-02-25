@@ -13,66 +13,151 @@ Reddit, and more — and lets me rank by **my keywords**, not social popularity.
 - Fill the screen "Database settings" with values from `config.php`, from the variables `DB_*`:
 - Connect to the PostgreSQL database:
 
-                        pgcli postgresql://postgres:$POSTGRES_PASSWORD@localhost:7710/postgres
+                          pgcli postgresql://postgres:$POSTGRES_PASSWORD@localhost:7710/postgres
 
 - Create user and database on the pgcli prompt using SQL commands:
 
-                        CREATE USER ttrss WITH PASSWORD 'ttrss';
-                        CREATE DATABASE ttrss;
-                        GRANT ALL ON DATABASE ttrss TO ttrss;
+                          CREATE USER ttrss WITH PASSWORD 'ttrss';
+                          CREATE DATABASE ttrss;
+                          GRANT ALL ON DATABASE ttrss TO ttrss;
 
 - Click on "Test configuration" and fix problems until the connection works.
 - Click on "Initialize database".
 
-## Development Setup
+## Usage Modes
 
-This setup uses a **local clone** of the TT-RSS repository for development and customization:
+This setup supports two modes of operation:
 
-1. **Clone the TT-RSS repository** to your local machine:
+1. **Normal Mode (Production)**: Uses official Docker images from GitHub Container Registry. Ideal for production use and distribution.
+2. **Dev Mode (Local Development)**: Builds from a local TT-RSS clone, allowing source code modifications and plugin development.
 
-    ```bash
-    git clone https://git.tt-rss.org/fox/tt-rss.git /path/to/tt-rss
-    export TTRSS_REPO_DIR=/path/to/tt-rss
-    ```
+### Normal Mode (Production)
 
-2. **Docker builds from the local clone**: The `compose.yaml` file builds the Docker image from your local repository (
-   specified by `${TTRSS_REPO_DIR}`), allowing you to modify the source code and rebuild as needed.
+**What it is:**
 
-3. **Plugins must be installed in the local repository**: Install plugins in `${TTRSS_REPO_DIR}/plugins.local/`
-   directory. They are typically Git repository clones:
-    ```bash
-    cd ${TTRSS_REPO_DIR}/plugins.local/
-    git clone https://github.com/username/plugin-name.git
-    ```
+- Uses official pre-built Docker images: `ghcr.io/tt-rss/tt-rss:latest`
+- Lightweight and easy to distribute
+- Perfect for production use or sharing with friends
+- Plugins can be installed via TT-RSS's built-in plugin installer
 
-### Updating the local clone of TT-RSS
+**Starting the stack:**
 
-1. Stop the TT-RSS containers:
-    ```bash
-    rss down
-    ```
-2. Go to the repository directory:
-    ```bash
-    cd ${TTRSS_REPO_DIR}
-    ```
-3. If you have [conjuring](https://github.com/andreoliwa/conjuring)) installed, run this to synchronize your fork with
-   the main repository:
-    ```bash
-    invoke fork.sync
-    ```
-4. Pull the latest images:
-    ```bash
-    rss pull
-    ```
-5. Start all containers and follow logs:
-    ```bash
-    rss up -d; rss logs -f
-    ```
+```bash
+# Using invoke task (recommended)
+cd ~/container-apps
+invoke rss-start
+
+# Or manually
+docker compose -f ~/container-apps/rss/compose.yaml up -d
+docker compose -f ~/container-apps/rss/compose.yaml logs -f
+```
+
+**Stopping the stack:**
+
+```bash
+# Using invoke task (recommended)
+cd ~/container-apps
+invoke rss-stop
+
+# Or manually
+docker compose -f ~/container-apps/rss/compose.yaml down
+```
+
+**Updating the stack:**
+
+```bash
+# Using invoke task (recommended) - stops, pulls latest images, starts
+cd ~/container-apps
+invoke rss-start --update
+
+# Or manually
+docker compose -f ~/container-apps/rss/compose.yaml down
+docker compose -f ~/container-apps/rss/compose.yaml pull
+docker compose -f ~/container-apps/rss/compose.yaml up -d
+docker compose -f ~/container-apps/rss/compose.yaml logs -f
+```
+
+**Installing the vf_scored plugin (Normal Mode):**
+
+The `vf_scored` plugin can be installed using TT-RSS's built-in plugin installer:
+
+1. Open TT-RSS in your browser (http://localhost:8002/tt-rss)
+2. Click hamburger menu (☰) or username in top right
+3. Go to **Preferences** → **Plugins** tab
+4. Use the plugin installer to add custom plugins
+
+Alternatively, you can manually copy the plugin into the container (not recommended for regular use).
+
+### Dev Mode (Local Development)
+
+**What it is:**
+
+- Builds Docker images from your local TT-RSS clone (`${TTRSS_REPO_DIR}`)
+- Mounts the local repository as a volume, allowing live code changes
+- The `vf_scored` plugin is automatically available from `${TTRSS_REPO_DIR}/plugins.local/vf_scored`
+- Ideal for developing TT-RSS core features or custom plugins
+
+**Prerequisites:**
+
+- Local TT-RSS clone at `${TTRSS_REPO_DIR}` (e.g., `~/dev/tt-rss`)
+- vf_scored plugin cloned in `${TTRSS_REPO_DIR}/plugins.local/vf_scored`
+
+**Starting the stack:**
+
+```bash
+# Using invoke task (recommended)
+cd ~/container-apps
+invoke rss-start --dev
+
+# Or manually
+docker compose -f ~/container-apps/rss/compose.yaml -f ~/container-apps/rss/compose.override.dev.yaml up -d
+docker compose -f ~/container-apps/rss/compose.yaml -f ~/container-apps/rss/compose.override.dev.yaml logs -f
+```
+
+**Stopping the stack:**
+
+```bash
+# Using invoke task (recommended)
+cd ~/container-apps
+invoke rss-stop --dev
+
+# Or manually
+docker compose -f ~/container-apps/rss/compose.yaml -f ~/container-apps/rss/compose.override.dev.yaml down
+```
+
+**Updating the stack (sync fork, rebuild):**
+
+```bash
+# Using invoke task (recommended) - syncs fork, stops, pulls, builds, starts
+cd ~/container-apps
+invoke rss-start --update --dev
+
+# Or manually
+pushd ~/dev/tt-rss
+invoke fork.sync
+popd
+docker compose -f ~/container-apps/rss/compose.yaml -f ~/container-apps/rss/compose.override.dev.yaml down
+docker compose -f ~/container-apps/rss/compose.yaml -f ~/container-apps/rss/compose.override.dev.yaml pull
+docker compose -f ~/container-apps/rss/compose.yaml -f ~/container-apps/rss/compose.override.dev.yaml build
+docker compose -f ~/container-apps/rss/compose.yaml -f ~/container-apps/rss/compose.override.dev.yaml up -d
+docker compose -f ~/container-apps/rss/compose.yaml -f ~/container-apps/rss/compose.override.dev.yaml logs -f
+```
+
+**Installing plugins in Dev Mode:**
+
+Plugins must be installed in the local repository's `plugins.local/` directory:
+
+```bash
+cd ${TTRSS_REPO_DIR}/plugins.local/
+git clone https://github.com/username/plugin-name.git
+```
+
+The `vf_scored` plugin should already be cloned at `${TTRSS_REPO_DIR}/plugins.local/vf_scored`.
 
 ### Configured Plugins
 
-- [ttrss-af-notifications](https://github.com/supahgreg/ttrss-af-notifications) - Adds a filter action to receive
-  JavaScript-based notifications
+- [vf_scored](https://github.com/andreoliwa/vf_scored) - Custom keyword-based scoring plugin (available in dev mode, installable in normal mode)
+- [ttrss-af-notifications](https://github.com/supahgreg/ttrss-af-notifications) - Adds a filter action to receive JavaScript-based notifications
 
 ## Requirements & Goals
 
@@ -107,15 +192,30 @@ This setup uses a **local clone** of the TT-RSS repository for development and c
 
 ## Running Locally (macOS LAN)
 
-1. `docker compose up -d`
-2. Open **http://localhost:8002/tt-rss** → login with admin credentials
-3. **Enable plugins:**
+See the [Usage Modes](#usage-modes) section for detailed instructions on starting/stopping the stack.
+
+**Quick start:**
+
+```bash
+cd ~/container-apps
+
+# Normal mode
+invoke rss-start
+
+# Dev mode
+invoke rss-start --dev
+```
+
+**After starting:**
+
+1. Open **http://localhost:8002/tt-rss** → login with admin credentials
+2. **Enable plugins:**
     1. Click hamburger menu (☰) or username in top right
     2. Go to **Preferences**
     3. Click **Plugins** tab
-    4. Enable: `af_readability`, `fever`, `share`, etc.
+    4. Enable: `af_readability`, `fever`, `share`, `vf_scored` (if installed), etc.
     5. For first-party plugins not bundled: use built-in plugin installer in Preferences → Plugins
-4. Add feeds from **http://rsshub/** (RSSHub proxy):
+3. Add feeds from **http://rsshub/** (RSSHub proxy):
     1. `http://rsshub/telegram/channel/<channel>`
     2. `http://rsshub/twitter/user/<handle>`
     3. `http://rsshub/substack/<site>`
@@ -123,7 +223,7 @@ This setup uses a **local clone** of the TT-RSS repository for development and c
     5. `http://rsshub/reddit/subreddit/<name>`
     6. Browse all routes: http://localhost:8006/ or [RSSHub Documentation](https://docs.rsshub.app/)
     7. Use [RSSHub Radar](https://github.com/DIYgod/RSSHub-Radar) browser extension to discover feeds on any website
-5. On Android (same Wi-Fi), open `http://<mac-lan-ip>:8002/tt-rss` in the browser or:
+4. On Android (same Wi-Fi), open `http://<mac-lan-ip>:8002/tt-rss` in the browser or:
     1. Use the **Tiny Tiny RSS** Android app
     2. Use **Fiery Feeds** or **Reeder** via the **Fever** plugin:
         - Server: `http://<mac-lan-ip>:8002/plugins/fever/`
@@ -153,19 +253,23 @@ This setup uses a **local clone** of the TT-RSS repository for development and c
 
 ### Prerequisites
 
-1. **Clone TT-RSS repository locally**:
+1. **PostgreSQL 17** must be running (see `../postgres/compose.yml`)
 
-    ```bash
-    git clone https://git.tt-rss.org/fox/tt-rss.git ~/tt-rss
-    ```
-
-2. **PostgreSQL 17** must be running (see `../postgres/compose.yml`)
+2. **Python dependencies** for using invoke commands:
+    - Install [pyinvoke/invoke](https://github.com/pyinvoke/invoke) to use the `invoke` commands:
+        ```bash
+        pip install invoke
+        ```
+    - Install [andreoliwa/conjuring](https://github.com/andreoliwa/conjuring) to use `invoke fork.sync` in dev mode:
+        ```bash
+        pip install conjuring
+        ```
 
 3. **Environment variables** must be set (add to your shell profile):
 
     ```bash
+    # Required for all modes
     export CONTAINER_APPS_DATA_DIR=~/data/
-    export TTRSS_REPO_DIR=~/tt-rss
     export TTRSS_DB_NAME=ttrss
     export TTRSS_DB_USER=ttrss
     export TTRSS_DB_PASS=<your-secure-password>
@@ -175,34 +279,55 @@ This setup uses a **local clone** of the TT-RSS repository for development and c
 
     **Important**: Make sure these are exported in your current shell before running docker compose!
 
+4. **For Dev Mode only**: Clone TT-RSS repository locally and set the environment variable:
+
+    ```bash
+    git clone https://git.tt-rss.org/fox/tt-rss.git ~/dev/tt-rss
+    export TTRSS_REPO_DIR=~/dev/tt-rss
+
+    # Clone the vf_scored plugin into the local TT-RSS clone
+    cd ${TTRSS_REPO_DIR}/plugins.local/
+    git clone https://github.com/andreoliwa/vf_scored.git
+    ```
+
+    **Note**: The vf_scored plugin should be installed in `${TTRSS_REPO_DIR}/plugins.local/vf_scored` (the plugin code).
+
 ### First-Time Setup
 
-#### Option 1: Automated Setup (Recommended)
+#### Automated Setup (Recommended)
 
 1. **Run the setup task**:
+
     ```bash
     cd ~/container-apps
-    invoke setup-ttrss
+    invoke rss-setup
     ```
+
     This will:
     1. Start PostgreSQL 17
     2. Create the TT-RSS database and user
     3. Create data directories
-2. .**Start TT-RSS stack**:
+
+2. **Start TT-RSS stack** (choose your mode):
+
     ```bash
-    cd rss
-    docker compose up -d
+    # Normal mode (production)
+    cd ~/container-apps
+    invoke rss-start
+
+    # OR Dev mode (local development)
+    invoke rss-start --dev
     ```
-3. **Check logs** to ensure everything started correctly:
-    ```bash
-    docker compose logs -f
-    ```
-4. **Access TT-RSS** on http://localhost:8002/tt-rss
-5. **Access RSSHub**:
+
+3. **Access TT-RSS** on http://localhost:8002/tt-rss
+
+4. **Access RSSHub**:
     1. Direct access (for browsing routes): http://localhost:8006/
     2. In TT-RSS feeds, use: `http://rsshub/...` (no port needed, proxy handles it)
     3. Browse available routes at [RSSHub Documentation](https://docs.rsshub.app/)
     4. Install [RSSHub Radar](https://github.com/DIYgod/RSSHub-Radar) browser extension to easily discover and subscribe to feeds
+
+For detailed usage instructions, see the [Usage Modes](#usage-modes) section above.
 
 ## Notes
 
