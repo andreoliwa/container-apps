@@ -6,23 +6,122 @@ Reddit, and more — and lets me rank by **my keywords**, not social popularity.
 - Officially maintained
   repo: [tt-rss/tt-rss: A free, flexible, open-source, web-based news feed (RSS/Atom/other) reader and aggregator.](https://github.com/tt-rss/tt-rss)
 
-## Install
+## Requirements & Goals
 
-[Installation Guide | Tiny Tiny RSS Documentation](https://tt-rss.org/docs/Installation-Guide.html)
+- **Self-hosted**.
+- **Open source** components.
+- **Lightweight** (fits 2 vCPU / 4 GB RAM).
+- **Mobile-friendly** (Android + iOS via clients).
+- **Keyword-first intelligence**:
+    - Filter and **score** articles by keywords/regex.
+    - Maintain keyword sets via UI (no config editing).
+    - Optional Bayesian learning (secondary to explicit rules).
+- Ingest from **non-RSS platforms** (Twitter/X, Telegram, Substack, YouTube, Reddit, Instagram…).
 
-- Fill the screen "Database settings" with values from `config.php`, from the variables `DB_*`:
-- Connect to the PostgreSQL database:
+## Chosen Architecture
 
-                          pgcli postgresql://postgres:$POSTGRES_PASSWORD@localhost:7710/postgres
+- **Tiny Tiny RSS (TTRSS)** — Core reader with **filters, scoring, labels**, plugins, and a responsive UI.
+    - Uses official maintained images from [tt-rss/tt-rss](https://github.com/tt-rss/tt-rss) (GitHub Container Registry)
+- **[RSSHub](https://github.com/DIYgod/RSSHub) + Redis** — Feed generator for non-RSS sources; enormous route catalog, good caching.
+    - `rsshub-internal`: The actual RSSHub service (port 1200)
+    - `rsshub`: Nginx proxy on port 80 (works around TT-RSS port stripping bug)
+    - Browse routes: [RSSHub Documentation](https://docs.rsshub.app/)
+    - Browser extension for easy feed discovery: [RSSHub Radar](https://github.com/DIYgod/RSSHub-Radar)
+- **Postgres** — Backend for TTRSS.
+- **Docker Compose** — One-file bring-up on macOS.
 
-- Create user and database on the pgcli prompt using SQL commands:
+### Why this combo?
 
-                          CREATE USER ttrss WITH PASSWORD 'ttrss';
-                          CREATE DATABASE ttrss;
-                          GRANT ALL ON DATABASE ttrss TO ttrss;
+- **Keyword and regex scoring** are first-class in TTRSS.
+- **UI-driven filter management** lets me evolve rules easily.
+- **RSSHub** covers substantially more sources and options than RSS-Bridge, and its URLs map 1:1 across environments,
+  making migration trivial.
 
-- Click on "Test configuration" and fix problems until the connection works.
-- Click on "Initialize database".
+## Keyword-First Workflow
+
+- **Filters → Create** rules like:
+    - _Content matches_ `(AI|Llama|frontier model|EU AI Act)` → **score +15**, **label: AI/Policy**
+    - _Title matches_ `(?i)\b(NBA|transfer|matchday)\b` → **score −20**, optionally **mark as read**
+    - _Feed title is_ `"Trusted Analyst"` → **score +50**
+- Sort by **Score (desc)** to surface what matters.
+- Use **Labels** to both tag and audit which rules triggered.
+- Optional **Bayesian plugin**: mark a sample of good/bad items to add adaptive scoring (secondary to explicit rules).
+
+## Setup Instructions
+
+### Prerequisites
+
+1. **PostgreSQL 17** must be running (see `../postgres/compose.yml`)
+
+2. **Python dependencies** for using invoke commands:
+    - Install [pipx](https://github.com/pypa/pipx) to manage Python dependencies
+    - Install [pyinvoke/invoke](https://github.com/pyinvoke/invoke) to use the `invoke` commands:
+        ```bash
+        pipx install invoke
+        ```
+    - Follow the quick setup of [andreoliwa/conjuring](https://github.com/andreoliwa/conjuring#quick-setup) to use `invoke fork.sync` in dev mode
+
+3. **Environment variables** must be set (add to your shell profile):
+
+    ```bash
+    # Required for all modes
+    export CONTAINER_APPS_DATA_DIR=~/data/
+    export TTRSS_DB_NAME=ttrss
+    export TTRSS_DB_USER=ttrss
+    export TTRSS_DB_PASS=<your-secure-password>
+    export TTRSS_ADMIN_PASS=<admin-password>
+    export POSTGRES_PASSWORD=<postgres-superuser-password>
+    ```
+
+    **Important**: Make sure these are exported in your current shell before running docker compose!
+
+4. **For Dev Mode only**: Clone TT-RSS repository locally and set the environment variable:
+
+    ```bash
+    git clone https://git.tt-rss.org/fox/tt-rss.git ~/dev/tt-rss
+    export TTRSS_REPO_DIR=~/dev/tt-rss
+
+    # Clone the vf_scored plugin into the local TT-RSS clone
+    cd ${TTRSS_REPO_DIR}/plugins.local/
+    git clone https://github.com/andreoliwa/vf_scored.git
+    ```
+
+    **Note**: The vf_scored plugin should be installed in `${TTRSS_REPO_DIR}/plugins.local/vf_scored` (the plugin code).
+
+### First-Time Setup
+
+#### Automated Setup (Recommended)
+
+1. **Run the setup task**:
+
+    ```bash
+    cd ~/container-apps
+    invoke rss-setup
+    ```
+
+    This will:
+    1. Start PostgreSQL 17
+    2. Create the TT-RSS database and user
+    3. Create data directories
+
+2. **Start TT-RSS stack** (choose your mode):
+
+    ```bash
+    # Normal mode (production)
+    cd ~/container-apps
+    invoke rss-start
+
+    # OR Dev mode (local development)
+    invoke rss-start --dev
+    ```
+
+3. **Access TT-RSS** on http://localhost:8002/tt-rss
+
+4. **Access RSSHub**:
+    1. Direct access (for browsing routes): http://localhost:8006/
+    2. In TT-RSS feeds, use: `http://rsshub/...` (no port needed, proxy handles it)
+    3. Browse available routes at [RSSHub Documentation](https://docs.rsshub.app/)
+    4. Install [RSSHub Radar](https://github.com/DIYgod/RSSHub-Radar) browser extension to easily discover and subscribe to feeds
 
 ## Usage Modes
 
@@ -159,52 +258,9 @@ The `vf_scored` plugin should already be cloned at `${TTRSS_REPO_DIR}/plugins.lo
 - [vf_scored](https://github.com/andreoliwa/vf_scored) - Custom keyword-based scoring plugin (available in dev mode, installable in normal mode)
 - [ttrss-af-notifications](https://github.com/supahgreg/ttrss-af-notifications) - Adds a filter action to receive JavaScript-based notifications
 
-## Requirements & Goals
+## Running Locally
 
-- **Self-hosted**.
-- **Open source** components.
-- **Lightweight** (fits 2 vCPU / 4 GB RAM).
-- **Mobile-friendly** (Android + iOS via clients).
-- **Keyword-first intelligence**:
-    - Filter and **score** articles by keywords/regex.
-    - Maintain keyword sets via UI (no config editing).
-    - Optional Bayesian learning (secondary to explicit rules).
-- Ingest from **non-RSS platforms** (Twitter/X, Telegram, Substack, YouTube, Reddit, Instagram…).
-
-## Chosen Architecture
-
-- **Tiny Tiny RSS (TTRSS)** — Core reader with **filters, scoring, labels**, plugins, and a responsive UI.
-    - Uses official maintained images from [tt-rss/tt-rss](https://github.com/tt-rss/tt-rss) (GitHub Container Registry)
-- **[RSSHub](https://github.com/DIYgod/RSSHub) + Redis** — Feed generator for non-RSS sources; enormous route catalog, good caching.
-    - `rsshub-internal`: The actual RSSHub service (port 1200)
-    - `rsshub`: Nginx proxy on port 80 (works around TT-RSS port stripping bug)
-    - Browse routes: [RSSHub Documentation](https://docs.rsshub.app/)
-    - Browser extension for easy feed discovery: [RSSHub Radar](https://github.com/DIYgod/RSSHub-Radar)
-- **Postgres** — Backend for TTRSS.
-- **Docker Compose** — One-file bring-up on macOS.
-
-### Why this combo?
-
-- **Keyword and regex scoring** are first-class in TTRSS.
-- **UI-driven filter management** lets me evolve rules easily.
-- **RSSHub** covers substantially more sources and options than RSS-Bridge, and its URLs map 1:1 across environments,
-  making migration trivial.
-
-## Running Locally (macOS LAN)
-
-See the [Usage Modes](#usage-modes) section for detailed instructions on starting/stopping the stack.
-
-**Quick start:**
-
-```bash
-cd ~/container-apps
-
-# Normal mode
-invoke rss-start
-
-# Dev mode
-invoke rss-start --dev
-```
+See the [Usage Modes](#usage-modes) section above for detailed instructions on starting/stopping the stack.
 
 **After starting:**
 
@@ -229,16 +285,6 @@ invoke rss-start --dev
         - Server: `http://<mac-lan-ip>:8002/plugins/fever/`
         - Username/Password: your TT-RSS credentials
 
-## Keyword-First Workflow
-
-- **Filters → Create** rules like:
-    - _Content matches_ `(AI|Llama|frontier model|EU AI Act)` → **score +15**, **label: AI/Policy**
-    - _Title matches_ `(?i)\b(NBA|transfer|matchday)\b` → **score −20**, optionally **mark as read**
-    - _Feed title is_ `"Trusted Analyst"` → **score +50**
-- Sort by **Score (desc)** to surface what matters.
-- Use **Labels** to both tag and audit which rules triggered.
-- Optional **Bayesian plugin**: mark a sample of good/bad items to add adaptive scoring (secondary to explicit rules).
-
 ## Moving to the cloud
 
 - Reuse Postgres in Docker (already running).
@@ -248,86 +294,6 @@ invoke rss-start --dev
     - `http://localhost:8006/` → `https://rsshub.yourdomain.tld/`
 - Update `TTRSS_SELF_URL_PATH` in compose.yaml to match your public URL
 - If some RSSHub routes need it, configure **PROXY_URI** or cookies per docs.
-
-## Setup Instructions
-
-### Prerequisites
-
-1. **PostgreSQL 17** must be running (see `../postgres/compose.yml`)
-
-2. **Python dependencies** for using invoke commands:
-    - Install [pyinvoke/invoke](https://github.com/pyinvoke/invoke) to use the `invoke` commands:
-        ```bash
-        pip install invoke
-        ```
-    - Install [andreoliwa/conjuring](https://github.com/andreoliwa/conjuring) to use `invoke fork.sync` in dev mode:
-        ```bash
-        pip install conjuring
-        ```
-
-3. **Environment variables** must be set (add to your shell profile):
-
-    ```bash
-    # Required for all modes
-    export CONTAINER_APPS_DATA_DIR=~/data/
-    export TTRSS_DB_NAME=ttrss
-    export TTRSS_DB_USER=ttrss
-    export TTRSS_DB_PASS=<your-secure-password>
-    export TTRSS_ADMIN_PASS=<admin-password>
-    export POSTGRES_PASSWORD=<postgres-superuser-password>
-    ```
-
-    **Important**: Make sure these are exported in your current shell before running docker compose!
-
-4. **For Dev Mode only**: Clone TT-RSS repository locally and set the environment variable:
-
-    ```bash
-    git clone https://git.tt-rss.org/fox/tt-rss.git ~/dev/tt-rss
-    export TTRSS_REPO_DIR=~/dev/tt-rss
-
-    # Clone the vf_scored plugin into the local TT-RSS clone
-    cd ${TTRSS_REPO_DIR}/plugins.local/
-    git clone https://github.com/andreoliwa/vf_scored.git
-    ```
-
-    **Note**: The vf_scored plugin should be installed in `${TTRSS_REPO_DIR}/plugins.local/vf_scored` (the plugin code).
-
-### First-Time Setup
-
-#### Automated Setup (Recommended)
-
-1. **Run the setup task**:
-
-    ```bash
-    cd ~/container-apps
-    invoke rss-setup
-    ```
-
-    This will:
-    1. Start PostgreSQL 17
-    2. Create the TT-RSS database and user
-    3. Create data directories
-
-2. **Start TT-RSS stack** (choose your mode):
-
-    ```bash
-    # Normal mode (production)
-    cd ~/container-apps
-    invoke rss-start
-
-    # OR Dev mode (local development)
-    invoke rss-start --dev
-    ```
-
-3. **Access TT-RSS** on http://localhost:8002/tt-rss
-
-4. **Access RSSHub**:
-    1. Direct access (for browsing routes): http://localhost:8006/
-    2. In TT-RSS feeds, use: `http://rsshub/...` (no port needed, proxy handles it)
-    3. Browse available routes at [RSSHub Documentation](https://docs.rsshub.app/)
-    4. Install [RSSHub Radar](https://github.com/DIYgod/RSSHub-Radar) browser extension to easily discover and subscribe to feeds
-
-For detailed usage instructions, see the [Usage Modes](#usage-modes) section above.
 
 ## Notes
 
