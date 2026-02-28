@@ -104,9 +104,31 @@ def up_logs(c: Context, app: str) -> None:
     c.run(f"{command} up -d && {command} logs -f")
 
 
-@task
-def rss_setup(c: Context) -> None:
-    """Set up TT-RSS: start PostgreSQL 17, create database, create data directories."""
+@task(
+    help={
+        "database": "Set up PostgreSQL database and data directories",
+        "plugin": "Install tt-rss-plugin-vf-scored plugin into running container",
+    }
+)
+def rss_setup(c: Context, database: bool = False, plugin: bool = False) -> None:
+    """Set up TT-RSS: create database/directories (--database) or install plugin (--plugin)."""
+    if not database and not plugin:
+        print_error("At least one flag is required: --database or --plugin")
+        print("\nUsage:")
+        print("  invoke rss-setup --database         # Set up database and directories")
+        print("  invoke rss-setup --plugin           # Install vf_scored plugin")
+        print("  invoke rss-setup --database --plugin # Do both")
+        raise Exit(code=1)
+
+    if database:
+        _setup_database(c)
+
+    if plugin:
+        _install_plugin(c)
+
+
+def _setup_database(c: Context) -> None:
+    """Set up PostgreSQL 17 database and data directories for TT-RSS."""
     db_name = os.environ.get("TTRSS_DB_NAME", "ttrss")
     db_user = os.environ.get("TTRSS_DB_USER", "ttrss")
     db_pass = os.environ.get("TTRSS_DB_PASS")
@@ -138,11 +160,53 @@ def rss_setup(c: Context) -> None:
         dir_path.mkdir(parents=True, exist_ok=True)
         print(f"  Created: {dir_path}")
 
-    print("\n✅ TT-RSS setup complete!")
+    print("\n✅ TT-RSS database setup complete!")
     print("\nNext steps:")
-    print("  1. cd rss && docker compose up -d")
-    print("  2. Open http://localhost:8002/")
-    print("  3. Login with user 'admin', password 'password' and change it immediately.")
+    print("  1. invoke rss-up")
+    print("  2. Open http://localhost:8002/tt-rss")
+    print("  3. Login with admin credentials and enable plugins in Preferences.")
+
+
+def _install_plugin(c: Context) -> None:
+    """Install tt-rss-plugin-vf-scored plugin into running TT-RSS container."""
+    container_name = "ttrss-app"
+    plugin_url = "https://github.com/andreoliwa/tt-rss-plugin-vf-scored.git"
+    plugin_dir = "/var/www/html/tt-rss/plugins.local"
+    plugin_name = "vf_scored"
+
+    print(f"Step 1: Checking if {container_name} container is running...")
+    result = c.run(f"docker ps --filter name={container_name} --format '{{{{.Names}}}}'", hide=True, warn=True)
+
+    if not result or container_name not in result.stdout:
+        print_error(f"Container '{container_name}' is not running!")
+        print("\nPlease start the RSS stack first:")
+        print("  invoke rss-up")
+        raise Exit(code=1)
+
+    print(f"✓ Container {container_name} is running")
+
+    print("\nStep 2: Checking if plugin is already installed...")
+    check_result = c.run(
+        f"docker exec {container_name} test -d {plugin_dir}/{plugin_name} && echo 'exists' || echo 'not found'",
+        hide=True,
+        warn=True,
+    )
+
+    if "exists" in check_result.stdout:
+        print(f"⚠ Plugin already installed at {plugin_dir}/{plugin_name}")
+        print("\nTo reinstall, remove it first:")
+        print(f"  docker exec {container_name} rm -rf {plugin_dir}/{plugin_name}")
+        return
+
+    print(f"\nStep 3: Installing plugin from {plugin_url}...")
+    c.run(f"docker exec {container_name} git clone {plugin_url} {plugin_dir}/{plugin_name}")
+
+    print("\n✅ Plugin installation complete!")
+    print("\nNext steps:")
+    print("  1. Open http://localhost:8002/tt-rss")
+    print("  2. Go to Preferences → Plugins")
+    print(f"  3. Enable '{plugin_name}' plugin")
+    print("  4. Configure your keyword scoring rules")
 
 
 @task

@@ -83,7 +83,7 @@ Reddit, and more — and lets me rank by **my keywords**, not social popularity.
 
     # Clone the vf_scored plugin into the local TT-RSS clone
     cd ${TTRSS_REPO_DIR}/plugins.local/
-    git clone https://github.com/andreoliwa/vf_scored.git
+    git clone https://github.com/andreoliwa/tt-rss-plugin-vf-scored.git vf_scored
     ```
 
     **Note**: The vf_scored plugin should be installed in `${TTRSS_REPO_DIR}/plugins.local/vf_scored` (the plugin code).
@@ -92,11 +92,11 @@ Reddit, and more — and lets me rank by **my keywords**, not social popularity.
 
 #### Automated Setup (Recommended)
 
-1. **Run the setup task**:
+1. **Run the database setup**:
 
     ```bash
     cd ~/container-apps
-    invoke rss-setup
+    invoke rss-setup --database
     ```
 
     This will:
@@ -178,14 +178,16 @@ docker compose -f ~/container-apps/rss/compose.yaml logs -f
 
 **Installing the vf_scored plugin (Normal Mode):**
 
-The `vf_scored` plugin can be installed using TT-RSS's built-in plugin installer:
+The `vf_scored` plugin can be installed using the invoke command:
 
-1. Open TT-RSS in your browser (http://localhost:8002/tt-rss)
-2. Click hamburger menu (☰) or username in top right
-3. Go to **Preferences** → **Plugins** tab
-4. Use the plugin installer to add custom plugins
+```bash
+cd ~/container-apps
+invoke rss-setup --plugin
+```
 
-Alternatively, you can manually copy the plugin into the container (not recommended for regular use).
+This will clone the plugin from GitHub into the running container at `/var/www/html/tt-rss/plugins.local/vf_scored`.
+
+Alternatively, you can use TT-RSS's built-in plugin installer through the web UI (Preferences → Plugins tab).
 
 ### Dev Mode (Local Development)
 
@@ -255,7 +257,7 @@ The `vf_scored` plugin should already be cloned at `${TTRSS_REPO_DIR}/plugins.lo
 
 ### Configured Plugins
 
-- [vf_scored](https://github.com/andreoliwa/vf_scored) - Custom keyword-based scoring plugin (available in dev mode, installable in normal mode)
+- [vf_scored](https://github.com/andreoliwa/tt-rss-plugin-vf-scored) - Custom keyword-based scoring plugin (available in dev mode, installable in normal mode via `invoke rss-setup --plugin`)
 - [ttrss-af-notifications](https://github.com/supahgreg/ttrss-af-notifications) - Adds a filter action to receive JavaScript-based notifications
 
 ## Running Locally
