@@ -307,13 +307,46 @@ def rss_up(c: Context, pull: bool = False, dev: bool = False) -> None:
     _docker_compose_rss(c, dev=dev, command="up -d", follow_logs=True)
 
 
-@task(
-    help={
-        "dev": "Use dev mode (local tt-rss clone)",
-    }
-)
-def rss_down(c: Context, dev: bool = False) -> None:
-    """Stop the TT-RSS stack."""
+def _detect_rss_dev_mode(c: Context) -> bool:
+    """Auto-detect if RSS stack is running in dev mode.
+
+    Detection strategy (in order of reliability):
+    1. Check SKIP_RSYNC_ON_STARTUP environment variable (dev-specific)
+    2. Check for bind mount vs named volume
+    3. Default to normal mode if container not running
+    """
+    # Check if container exists and is running
+    check = c.run("docker ps -a --filter name=ttrss-app --format '{{.Names}}'", hide=True, warn=True)
+
+    if not check or "ttrss-app" not in check.stdout:
+        print("⚠ RSS stack containers not found, assuming normal mode")
+        return False
+
+    # Primary detection: check for dev-specific env var
+    env_check = c.run(
+        "docker inspect ttrss-app --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -q SKIP_RSYNC_ON_STARTUP",
+        hide=True,
+        warn=True,
+    )
+
+    if env_check and env_check.ok:
+        return True
+
+    # Fallback: check mount type
+    mount_check = c.run(
+        "docker inspect ttrss-app --format"
+        " '{{range .Mounts}}{{if eq .Destination \"/var/www/html/tt-rss\"}}{{.Type}}{{end}}{{end}}'",
+        hide=True,
+        warn=True,
+    )
+
+    return mount_check and "bind" in mount_check.stdout
+
+
+@task
+def rss_down(c: Context) -> None:
+    """Stop the TT-RSS stack (auto-detects dev/normal mode)."""
+    dev = _detect_rss_dev_mode(c)
     mode_name = "dev" if dev else "normal"
-    print(f"Stopping TT-RSS stack in {mode_name} mode...")
+    print(f"Detected {mode_name} mode, stopping TT-RSS stack...")
     _docker_compose_rss(c, dev=dev, command="down")
