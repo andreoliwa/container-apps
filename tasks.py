@@ -1,6 +1,7 @@
 """Invoke tasks for containers."""
 
 import os
+import platform
 import socket
 import time
 from datetime import UTC, datetime
@@ -34,9 +35,10 @@ def db_connect(
     db_user = DB_USER
     db_password = os.environ[POSTGRES_ENV.upper()]
     if psql:
+        tty_flag = "" if command else " -it"
         run_command(
             c,
-            f"docker exec -it postgres{version} psql -U {db_user} --csv --tuples-only",
+            f"docker exec{tty_flag} postgres{version} psql -U {db_user} --csv --tuples-only",
             f'--command="{command}"' if command else "",
             database,
         )
@@ -66,7 +68,7 @@ def db_list(c: Context, version: int = POSTGRES_VERSION) -> None:
     )
     run_command(
         c,
-        f"docker exec -it postgres{version} psql -U {db_user} --csv --tuples-only",
+        f"docker exec postgres{version} psql -U {db_user} --csv --tuples-only",
         f'--command="{command}"',
         "postgres",
     )
@@ -93,7 +95,7 @@ def db_dump(c: Context, database: str, version: int = POSTGRES_VERSION, output_d
     output_path.mkdir(exist_ok=True, parents=True)
 
     full_dump_path = output_path / f"{database}_{datetime_str}.sql"
-    c.run(f"docker exec -it postgres{version} pg_dump -U postgres {database} > {full_dump_path}")
+    c.run(f"docker exec postgres{version} pg_dump -U postgres {database} > {full_dump_path}")
     c.run(f"ls -lrth {output_path!s} | tail -n 20", dry=False)
 
 
@@ -148,10 +150,10 @@ def _setup_database(c: Context) -> None:
     c.run("cd postgres && docker compose up -d postgres17")
 
     print("\nStep 2: Creating TT-RSS database and user...")
-    c.run(f'docker exec -it postgres17 psql -U postgres -c "CREATE DATABASE {db_name};"')
-    c.run(f"docker exec -it postgres17 psql -U postgres -c \"CREATE USER {db_user} WITH PASSWORD '{db_pass}';\"")
-    c.run(f'docker exec -it postgres17 psql -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE {db_name} TO {db_user};"')
-    c.run(f'docker exec -it postgres17 psql -U postgres -d {db_name} -c "GRANT ALL ON SCHEMA public TO {db_user};"')
+    c.run(f'docker exec postgres17 psql -U postgres -c "CREATE DATABASE {db_name};"')
+    c.run(f"docker exec postgres17 psql -U postgres -c \"CREATE USER {db_user} WITH PASSWORD '{db_pass}';\"")
+    c.run(f'docker exec postgres17 psql -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE {db_name} TO {db_user};"')
+    c.run(f'docker exec postgres17 psql -U postgres -d {db_name} -c "GRANT ALL ON SCHEMA public TO {db_user};"')
 
     print("\nStep 3: Creating data directories...")
     ttrss_dirs = data_dir_path / "ttrss"
@@ -291,6 +293,10 @@ def rss_up(c: Context, pull: bool = False, dev: bool = False) -> None:
                 raise Exit(code=1)
 
             print("Dev mode: Syncing fork, pulling, and building...")
+            if platform.system() != "Darwin":
+                print("Changing owner and permissions on Linux...")
+                c.run(f"chown -R root:root {ttrss_repo_dir}")
+                c.run(f"chmod 777 {ttrss_repo_dir}")
             c.run(f"pushd {ttrss_repo_dir} && invoke fork.sync && popd")
             _docker_compose_rss(c, dev=True, command="down")
             _docker_compose_rss(c, dev=True, command="pull")
@@ -350,3 +356,10 @@ def rss_down(c: Context) -> None:
     mode_name = "dev" if dev else "normal"
     print(f"Detected {mode_name} mode, stopping TT-RSS stack...")
     _docker_compose_rss(c, dev=dev, command="down")
+
+
+@task
+def rss_logs(c: Context) -> None:
+    """Follow TT-RSS stack logs (auto-detects dev/normal mode)."""
+    dev = _detect_rss_dev_mode(c)
+    _docker_compose_rss(c, dev=dev, command="logs -f")

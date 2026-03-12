@@ -71,6 +71,9 @@ Reddit, and more — and lets me rank by **my keywords**, not social popularity.
     export TTRSS_DB_PASS=<your-secure-password>
     export TTRSS_ADMIN_PASS=<admin-password>
     export POSTGRES_PASSWORD=<postgres-superuser-password>
+
+    # Optional: override TT-RSS URL (defaults to http://localhost:8002/tt-rss)
+    export TTRSS_SELF_URL_PATH=https://news.yourdomain.tld/tt-rss
     ```
 
     **Important**: Make sure these are exported in your current shell before running docker compose!
@@ -287,15 +290,88 @@ See the [Usage Modes](#usage-modes) section above for detailed instructions on s
         - Server: `http://<mac-lan-ip>:8002/plugins/fever/`
         - Username/Password: your TT-RSS credentials
 
-## Moving to the cloud
+## Migrating to another server
 
-- Reuse Postgres in Docker (already running).
-- Put services behind **Caddy/Traefik** with HTTPS.
-- Replace local URLs:
-    - `http://localhost:8002/tt-rss` → `https://news.yourdomain.tld/tt-rss`
-    - `http://localhost:8006/` → `https://rsshub.yourdomain.tld/`
-- Update `TTRSS_SELF_URL_PATH` in compose.yaml to match your public URL
-- If some RSSHub routes need it, configure **PROXY_URI** or cookies per docs.
+1. Export feeds as OPML: **Preferences → Feeds → OPML export**.
+2. Stop the stack:
+    ```bash
+    cd ~/container-apps
+    invoke rss-down
+    ```
+3. Back up the database (source server).
+    - Follow the dump instructions in [the PostgreSQL container](../postgres/README.md):
+
+    ```bash
+    cd ~/container-apps
+    invoke db-dump ttrss --version 17
+    ```
+
+    - The list of recent dump files with timestamps will be displayed.
+
+4. Back up config and RSSHub environment (source server)
+
+    ```bash
+    tar --no-xattrs -czf ~/Downloads/ttrss-config.tar.gz -C ${CONTAINER_APPS_DATA_DIR}/rss config
+    ```
+
+    - RSSHub is stateless — its configuration lives entirely in environment variables inside `rss/compose.yaml` (e.g.
+      `ACCESS_KEY`, `PROXY_URI`, cookies, tokens).
+    - The repository itself is what you need to transfer. Redis is a cache only
+      and does not need to be backed up.
+
+5. Transfer the dump file, the config archive, and this repository to the new server (e.g. via `scp` or `rsync`).
+6. Start PostgreSQL on the new server.
+    - follow the [prerequisites](#prerequisites) to export all required environment variables, then:
+    ```bash
+    cd ~/container-apps
+    docker compose -f postgres/compose.yml up -d
+    ```
+7. Create the TT-RSS database and user:
+    ```bash
+    invoke rss-setup --database
+    ```
+8. Restore the database dump (new server)
+    - Follow the restore instructions in [the PostgreSQL container](../postgres/README.md).
+      In summary:
+        1. Copy the dump file into the running container or to a path accessible via a bind mount.
+        2. Connect to the container and drop/recreate the database if it already has tables.
+        3. Restore:
+        ```bash
+        invoke db-connect ttrss --version 17 --psql --command="\i /path/to/dump.sql"
+        # or directly via docker exec:
+        docker exec -i postgres17 psql -U postgres ttrss < /path/to/dump.sql
+        ```
+9. Restore config data (new server)
+
+    ```bash
+    mkdir -p ${CONTAINER_APPS_DATA_DIR}/rss
+    tar -xzf ttrss-config.tar.gz -C ${CONTAINER_APPS_DATA_DIR}/rss
+    ```
+
+    - RSSHub config is already in `rss/compose.yaml` (transferred in step 2). Redis will repopulate itself on first use.
+
+10. Update URLs and expose publicly (optional)
+    - Before starting, set the `TTRSS_SELF_URL_PATH` environment variable:
+
+    ```bash
+    export TTRSS_SELF_URL_PATH=https://news.yourdomain.tld/tt-rss
+    ```
+
+    - For public HTTPS access, put services behind **Caddy/Traefik** and map:
+        - `http://localhost:8002/tt-rss` → `https://news.yourdomain.tld/tt-rss`
+        - `http://localhost:8006/` → `https://rsshub.yourdomain.tld/`
+    - If some RSSHub routes need it, configure **PROXY_URI** or cookies per docs.
+
+11. Start the RSS stack (new server)
+
+    ```bash
+    cd ~/container-apps
+    invoke rss-start        # normal/production mode
+    # or
+    invoke rss-start --dev  # dev mode (requires TTRSS_REPO_DIR)
+    ```
+
+    - Verify at `https://news.yourdomain.tld/tt-rss`. Re-enable plugins under **Preferences → Plugins**.
 
 ## Notes
 

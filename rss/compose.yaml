@@ -10,7 +10,7 @@ x-shared-env: &shared-env
   TTRSS_DB_NAME: ${TTRSS_DB_NAME}
   TTRSS_DB_USER: ${TTRSS_DB_USER}
   TTRSS_DB_PASS: ${TTRSS_DB_PASS}
-  TTRSS_SELF_URL_PATH: http://localhost:8002/tt-rss
+  TTRSS_SELF_URL_PATH: ${TTRSS_SELF_URL_PATH:-http://localhost:8002/tt-rss}
   TTRSS_NO_STARTUP_PLUGIN_UPDATES: 1
 
 networks:
@@ -91,8 +91,6 @@ services:
     environment:
       CACHE_TYPE: redis
       REDIS_URL: redis://redis:6379/
-    ports:
-      - "8006:1200"
     networks:
       - ttrss
     depends_on:
