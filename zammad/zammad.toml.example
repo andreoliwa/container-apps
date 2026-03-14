@@ -1,0 +1,37 @@
+# zammad.toml — instance-specific migration configuration
+# Copy to zammad.toml and fill in your values. This file is gitignored.
+
+# Name of the Zammad group that will own all imported tickets.
+# The group is created automatically if it doesn't exist.
+import_group = "Redmine Import"
+
+# Fallback pending_time when a ticket maps to "pending reminder" but has no due_date.
+pending_time_fallback = "2099-12-31T00:00:00Z"
+
+# Login of the Zammad user to use as customer when a Redmine issue's author has no match.
+# Must be an existing Zammad user (e.g. the admin account created during setup).
+default_customer_login = "admin"
+
+# Optional: name of the Redmine IssueCustomField (list type) to import as native Zammad tags.
+# Omit or leave empty to skip tag import from custom fields.
+# tags_custom_field = "Tags"
+
+# Map every Redmine status name to a Zammad state type.
+# Valid zammad_type values: "open", "closed", "pending reminder", "pending action"
+# The migration will create a matching Zammad ticket state for each entry.
+# Redmine statuses marked is_closed=true always map to "closed" regardless of this table.
+[states]
+"New"        = { zammad_type = "open" }
+"In Progress"= { zammad_type = "open" }
+"Feedback"   = { zammad_type = "pending reminder" }
+"Resolved"   = { zammad_type = "closed" }
+"Closed"     = { zammad_type = "closed" }
+"Rejected"   = { zammad_type = "closed" }
+
+# Map every Redmine priority name to a Zammad priority.
+# Valid zammad_priority values: "1 low", "2 normal", "3 high"
+[priorities]
+"Low"    = "1 low"
+"Normal" = "2 normal"
+"High"   = "3 high"
+"Urgent" = "3 high"

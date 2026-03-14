@@ -9,6 +9,14 @@ from pathlib import Path
 
 from conjuring.grimoire import print_error, run_command
 from invoke import Context, Exit, task
+from zammad.tasks import (  # noqa: F401
+    zammad_down,
+    zammad_migrate,
+    zammad_reindex,
+    zammad_setup,
+    zammad_up,
+    zammad_wipe,
+)
 
 DB_USER = "postgres"
 POSTGRES_VERSION = 14

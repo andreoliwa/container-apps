@@ -131,3 +131,5 @@ dmypy.json
 # Local directories and files
 strapi/app
 redmine/configuration.yml
+zammad/migration_map.json
+zammad/zammad.toml

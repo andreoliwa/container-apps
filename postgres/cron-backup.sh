@@ -5,9 +5,9 @@
 # - crontab -l
 
 # $HOME doesn't work in crontab, so we need to set it manually
-HOME_DIR=$(dirname $(dirname $(dirname $(realpath $0))))
+HOME_DIR=$(dirname "$(dirname "$(dirname "$(realpath "$0")")")")
 BACKUP_DIR="$HOME_DIR/OneDrive/Backup/$(hostname)/postgres14"
-mkdir -p $BACKUP_DIR
+mkdir -p "$BACKUP_DIR"
 
 DATABASE=$1
 if [ -z "$DATABASE" ]; then
@@ -25,14 +25,15 @@ find "$BACKUP_DIR" -type f -size 0 -print -delete
 
 set -e
 # This file has the environment variables needed to connect to the database
-source $HOME_DIR/.config/dotfiles/local.env
+# shellcheck source=/dev/null
+source "$HOME_DIR/.config/dotfiles/local.env"
 OUTPUT_SQL_FILE="${BACKUP_DIR}/${DATABASE}_$(date "+%Y-%m-%d-%H-%M-%S").sql"
 echo "Dumping the database to ${OUTPUT_SQL_FILE}..."
 COMMAND="$(which docker) compose \
-    -f $HOME_DIR/container-apps/postgres/compose.yml \
+    -f $HOME_DIR/container-apps/postgres/compose.yaml \
     exec -T postgres14 pg_dump -U postgres $DATABASE"
 echo "Running command: $COMMAND"
-$COMMAND > $OUTPUT_SQL_FILE
+$COMMAND >"$OUTPUT_SQL_FILE"
 
 echo "Compressing the backup file..."
 gzip "$OUTPUT_SQL_FILE"

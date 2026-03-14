@@ -1,0 +1,24 @@
+# Shared Redis instance for container-apps services
+# Mirrors the postgres/ pattern: named volume, named network, consumers declare external
+volumes:
+  redis:
+    driver: local
+    name: redis
+
+networks:
+  redis:
+    name: redis
+
+services:
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    container_name: redis
+    expose:
+      - "6379"
+    volumes:
+      - redis:/data
+    networks:
+      - redis
+    cpus: "0.2"
+    mem_limit: "128m"

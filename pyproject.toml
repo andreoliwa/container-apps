@@ -37,3 +37,9 @@ inline-quotes = "double"
 [tool.ruff.lint.mccabe]
 # https://docs.astral.sh/ruff/settings/#max-complexity
 max-complexity = 10
+
+[tool.ruff.lint.per-file-ignores]
+# Invoke task files: signatures use untyped ctx args (ANN001), broad exception catches are intentional
+# (BLE001), long functions are OK for migration scripts (C901, PLR0913, PLR0915),
+# and PERF203 (try/except in loop) is acceptable for per-item error isolation.
+"zammad/tasks.py" = ["ANN001", "ANN401", "BLE001", "C901", "PERF203", "PLR0913", "PLR0915", "S603", "S607"]

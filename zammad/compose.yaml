@@ -1,0 +1,156 @@
+# Zammad - Modern open-source helpdesk/ticket system
+# https://zammad.org/
+# Adapted from official docker-compose to use shared postgres17 and redis
+
+x-shared-env: &shared-env
+  POSTGRESQL_HOST: postgres17
+  POSTGRESQL_PORT: "5432"
+  POSTGRESQL_USER: zammad
+  POSTGRESQL_PASS: ${ZAMMAD_DB_PASSWORD}
+  POSTGRESQL_DB: zammad
+  REDIS_URL: redis://redis:6379/0
+  ELASTICSEARCH_HOST: zammad-elasticsearch
+  MEMCACHE_SERVERS: zammad-memcached:11211
+  ZAMMAD_RAILSSERVER_HOST: zammad-railsserver
+  ZAMMAD_FQDN: ${ZAMMAD_FQDN:-localhost:8008}
+
+networks:
+  postgres17:
+    external: true
+    name: postgres17
+  redis:
+    external: true
+    name: redis
+  zammad:
+
+volumes:
+  zammad-storage:
+  zammad-elasticsearch:
+
+services:
+  zammad-elasticsearch:
+    image: elasticsearch:8.17.0
+    container_name: zammad-elasticsearch
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    volumes:
+      - zammad-elasticsearch:/usr/share/elasticsearch/data
+    networks:
+      - zammad
+    cpus: "0.5"
+    mem_limit: "1g"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9200/_cluster/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  zammad-memcached:
+    image: memcached:1.6-alpine
+    container_name: zammad-memcached
+    restart: unless-stopped
+    command: memcached -m 64
+    networks:
+      - zammad
+    cpus: "0.1"
+    mem_limit: "128m"
+
+  zammad-init:
+    image: ghcr.io/zammad/zammad:7.0.0-0021
+    container_name: zammad-init
+    restart: "no"
+    command: ["zammad-init"]
+    environment:
+      <<: *shared-env
+      POSTGRESQL_OPTIONS: ""
+    volumes:
+      - zammad-storage:/opt/zammad/storage
+    networks:
+      - postgres17
+      - redis
+      - zammad
+    depends_on:
+      zammad-elasticsearch:
+        condition: service_healthy
+
+  zammad-railsserver:
+    image: ghcr.io/zammad/zammad:7.0.0-0021
+    container_name: zammad-railsserver
+    restart: unless-stopped
+    command: ["zammad-railsserver"]
+    environment:
+      <<: *shared-env
+    volumes:
+      - zammad-storage:/opt/zammad/storage
+    networks:
+      - postgres17
+      - redis
+      - zammad
+    depends_on:
+      zammad-init:
+        condition: service_completed_successfully
+    cpus: "0.5"
+    mem_limit: "512m"
+
+  zammad-scheduler:
+    image: ghcr.io/zammad/zammad:7.0.0-0021
+    container_name: zammad-scheduler
+    restart: unless-stopped
+    command: ["zammad-scheduler"]
+    environment:
+      <<: *shared-env
+    volumes:
+      - zammad-storage:/opt/zammad/storage
+    networks:
+      - postgres17
+      - redis
+      - zammad
+    depends_on:
+      zammad-init:
+        condition: service_completed_successfully
+    cpus: "0.3"
+    mem_limit: "256m"
+
+  zammad-websocket:
+    image: ghcr.io/zammad/zammad:7.0.0-0021
+    container_name: zammad-websocket
+    restart: unless-stopped
+    command: ["zammad-websocket"]
+    environment:
+      <<: *shared-env
+    volumes:
+      - zammad-storage:/opt/zammad/storage
+    networks:
+      - postgres17
+      - redis
+      - zammad
+    depends_on:
+      zammad-init:
+        condition: service_completed_successfully
+    cpus: "0.2"
+    mem_limit: "128m"
+
+  zammad-nginx:
+    image: ghcr.io/zammad/zammad:7.0.0-0021
+    container_name: zammad-nginx
+    restart: unless-stopped
+    command: ["zammad-nginx"]
+    environment:
+      <<: *shared-env
+    ports:
+      - "127.0.0.1:8008:8080"
+    volumes:
+      - zammad-storage:/opt/zammad/storage
+    networks:
+      - postgres17
+      - redis
+      - zammad
+    depends_on:
+      zammad-railsserver:
+        condition: service_started
+    cpus: "0.3"
+    mem_limit: "256m"
