@@ -142,6 +142,7 @@ def zammad_wipe(c: Context) -> None:
     total_failed += _wipe_collection(api, "tickets", "tickets", migration_map, "tickets")
     total_failed += _wipe_collection(api, "users", "users", migration_map, "users")
     total_failed += _wipe_collection(api, "groups", "groups", migration_map, "groups")
+    total_failed += _wipe_collection(api, "overviews", "overviews", migration_map, "overviews")
     total_failed += _wipe_collection(api, "custom fields", "object_manager_attributes", migration_map, "custom_fields")
 
     if not c.config.run.dry:
@@ -264,7 +265,16 @@ def _import_mode_off(c: Context) -> None:
 def _load_migration_map() -> dict:
     if MAP_FILE.exists():
         return json.loads(MAP_FILE.read_text())
-    return {"users": {}, "groups": {}, "tickets": {}, "articles": {}, "custom_fields": {}, "states": {}, "links": {}}
+    return {
+        "users": {},
+        "groups": {},
+        "tickets": {},
+        "articles": {},
+        "custom_fields": {},
+        "states": {},
+        "links": {},
+        "overviews": {},
+    }
 
 
 def _save_migration_map(migration_map: dict, dry_run: bool = False) -> None:
@@ -580,30 +590,35 @@ def _read_tags_from_custom_field(conn, tags_cf_id: int) -> dict[int, list[str]]:
 
 def _resolve_state_name(status_name: str, is_closed: bool, due_date, state_map: dict) -> str:
     """Return the Zammad state name to use for a given Redmine status."""
+    # Always prefer an exact name match in the TOML first, regardless of open/closed.
+    if status_name in state_map:
+        return status_name
+    # No explicit mapping — fall back to type-based heuristics.
     if is_closed:
-        for name, cfg in state_map.items():
-            if cfg.get("zammad_type") == _StateType.CLOSED.value:
-                return name
         return _StateType.CLOSED.value
     if due_date:
-        # Return the first configured pending-reminder state, or fall back to the built-in name.
         for name, cfg in state_map.items():
             if cfg.get("zammad_type") == _StateType.PENDING_REMINDER.value:
                 return name
         return _StateType.PENDING_REMINDER.value
-    cfg = state_map.get(status_name, {})
-    return status_name if cfg else _StateType.OPEN.value
+    return _StateType.OPEN.value
 
 
 # --- Migration steps ---
 
 
-def _migrate_states(_conn, api: _ZammadAPI, migration_map: dict, toml: dict, error_log: logging.Logger) -> None:
+def _migrate_states(conn, api: _ZammadAPI, migration_map: dict, toml: dict, error_log: logging.Logger) -> None:
     """Create Zammad ticket states matching Redmine statuses (from TOML config)."""
     state_map = toml.get("states", {})
     if not state_map:
         print("\nNo [states] config in zammad.toml — skipping state creation.")
         return
+
+    # Build redmine_status_name → redmine_status_id lookup so we can store a
+    # "redmine_status_<id>" → zammad_id index for use by the overviews migration.
+    with conn.cursor() as cur:
+        cur.execute("SELECT id, name FROM issue_statuses")
+        redmine_status_name_to_id: dict[str, str] = {row[1]: str(row[0]) for row in cur.fetchall()}
 
     # Derive state_type name→id from existing states (no dedicated /ticket_state_types endpoint).
     # ?expand=true returns state_type as a plain string name alongside state_type_id.
@@ -615,7 +630,13 @@ def _migrate_states(_conn, api: _ZammadAPI, migration_map: dict, toml: dict, err
 
     for status_name, cfg in state_map.items():
         state_key = f"state_{status_name}"
+        redmine_status_id = redmine_status_name_to_id.get(status_name)
+        redmine_key = f"redmine_status_{redmine_status_id}" if redmine_status_id else None
+
         if state_key in migration_map["states"]:
+            # Backfill the redmine_status_<id> key if it was added after the initial migration.
+            if redmine_key and redmine_key not in migration_map["states"]:
+                migration_map["states"][redmine_key] = migration_map["states"][state_key]
             skipped += 1
             continue
 
@@ -638,7 +659,7 @@ def _migrate_states(_conn, api: _ZammadAPI, migration_map: dict, toml: dict, err
         }
         try:
             result = api.post("ticket_states", state_payload)
-            migration_map["states"][state_key] = result["id"]
+            zammad_state_id = result["id"]
             migrated += 1
         except _ZammadAPIError:
             # State already exists — fetch and update it so default_create/follow_up are set.
@@ -646,10 +667,15 @@ def _migrate_states(_conn, api: _ZammadAPI, migration_map: dict, toml: dict, err
             match = next((s for s in existing if s["name"] == status_name), None)
             if match:
                 api.put(f"ticket_states/{match['id']}", {"default_create": True, "default_follow_up": True})
-                migration_map["states"][state_key] = match["id"]
+                zammad_state_id = match["id"]
                 migrated += 1
             else:
                 error_log.error(f"State '{status_name}': creation failed and state not found by name")
+                continue
+
+        migration_map["states"][state_key] = zammad_state_id
+        if redmine_key:
+            migration_map["states"][redmine_key] = zammad_state_id
 
     print(f"  States: {migrated} created/found, {skipped} skipped (already done)")
     _save_migration_map(migration_map, api.dry_run)
@@ -1127,6 +1153,273 @@ def _migrate_links(conn, api: _ZammadAPI, migration_map: dict, error_log: loggin
     _save_migration_map(migration_map, api.dry_run)
 
 
+def _read_redmine_queries(conn) -> list:
+    import psycopg2.extras
+
+    with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("""
+            SELECT id, name, filters, sort_criteria, group_by, user_id, visibility
+            FROM queries
+            WHERE type = 'IssueQuery'
+            ORDER BY id
+        """)
+        return cur.fetchall()
+
+
+def _parse_redmine_filters(
+    filters_yaml: str | None,
+    migration_map: dict,
+    toml: dict,
+    error_log: logging.Logger,
+    query_name: str,
+) -> dict:
+    """Convert Redmine filter YAML into a Zammad overview condition dict.
+
+    Supported field mappings:
+      status_id       → ticket.state_id   (operators: =, !, o)
+      assigned_to_id  → ticket.owner_id   (operator: =)
+      tracker_id      → ticket.group_id   (operator: =, mapped via tracker_N group keys)
+      due_date        → ticket.pending_time (operators: !*, =)
+      cf_N            → ticket.<zammad_name> (operator: =, !)
+
+    Unsupported fields (child_id, project_id, etc.) are silently skipped.
+    """
+    import yaml
+
+    if not filters_yaml or filters_yaml.strip() in ("---", "--- {}"):
+        return {}
+
+    try:
+        raw: dict = yaml.safe_load(filters_yaml) or {}
+    except Exception as e:
+        error_log.error(f"Overview '{query_name}': could not parse filters YAML: {e}")
+        return {}
+
+    # Ruby YAML serialises symbol keys with a leading ":" — strip it for all keys/sub-keys.
+    def _strip(d: dict) -> dict:
+        return {k.lstrip(":"): v for k, v in d.items()}
+
+    # Build reverse maps for fast lookups.
+    # state_name → zammad_state_id  (from migration_map["states"])
+    state_map_toml: dict = toml.get("states", {})
+    # Redmine status_id → state_name  (from TOML ordering; we stored state_N keys)
+    # We need Redmine status_id → Zammad state_id.  The migration_map stores
+    # {"states": {"state_<name>": <zammad_id>}}, so we build name→id first.
+    zammad_state_name_to_id: dict[str, int] = {
+        k.removeprefix("state_"): v for k, v in migration_map.get("states", {}).items()
+    }
+    # We also need Redmine status_id → state_name.  Query the DB-agnostic way: rely on
+    # the TOML state list — but we can't query the DB here.  Instead we note that the
+    # migration_map["states"] keys are "state_<redmine_status_name>", and we need
+    # redmine_status_id → name.  We can only do that if we pass the DB or read from the map.
+    # Simplest: accept that we can only resolve state IDs that appear literally in
+    # migration_map["states"] keys.  For the "o" (open) operator we just emit all
+    # non-closed state names.
+    closed_state_names = {n for n, cfg in state_map_toml.items() if cfg.get("zammad_type") == "closed"}
+    open_state_ids = [str(v) for k, v in zammad_state_name_to_id.items() if k not in closed_state_names]
+
+    # tracker_N group key → zammad_group_id
+    tracker_group_ids: dict[str, int] = {
+        k: v for k, v in migration_map.get("groups", {}).items() if k.startswith("tracker_")
+    }
+
+    # Redmine cf_N → zammad_name (from migration_map["custom_fields"])
+    cf_zammad_name: dict[str, str] = {
+        f"cf_{rid}": info["zammad_name"]
+        for rid, info in migration_map.get("custom_fields", {}).items()
+        if isinstance(info, dict) and "zammad_name" in info
+    }
+
+    # Operator mapping: Redmine → Zammad
+    op_map = {
+        "=": "is",
+        "!": "is not",
+        "~": "contains",
+        "!~": "contains not",
+        "*": None,  # "any" — omit the condition
+        "!*": "is not",  # "none" — is not + empty value list means "not set"
+    }
+
+    condition: dict = {}
+
+    for field, raw_filter in raw.items():
+        if not isinstance(raw_filter, dict):
+            continue
+        f = _strip(raw_filter)
+        operator_raw: str = str(f.get("operator", "="))
+        values: list = f.get("values") or []
+        if not isinstance(values, list):
+            values = [values]
+        values = [str(v) for v in values if v is not None and str(v) != ""]
+
+        # --- status_id ---
+        if field == "status_id":
+            if operator_raw == "o":
+                # Open issues: all non-closed states we know about.
+                if open_state_ids:
+                    condition["ticket.state_id"] = {"operator": "is", "value": open_state_ids}
+            elif operator_raw == "c":
+                closed_ids = [str(v) for k, v in zammad_state_name_to_id.items() if k in closed_state_names]
+                if closed_ids:
+                    condition["ticket.state_id"] = {"operator": "is", "value": closed_ids}
+            elif operator_raw in ("=", "!") and values:
+                zammad_op = op_map[operator_raw]
+                # Resolve Redmine status IDs → Zammad state IDs via the redmine_status_<id>
+                # index written by _migrate_states.
+                zammad_ids = [
+                    str(migration_map["states"][f"redmine_status_{rid}"])
+                    for rid in values
+                    if f"redmine_status_{rid}" in migration_map["states"]
+                ]
+                unresolved = [rid for rid in values if f"redmine_status_{rid}" not in migration_map["states"]]
+                if unresolved:
+                    error_log.warning(f"Overview '{query_name}': status IDs {unresolved} not in map — skipped.")
+                if zammad_ids:
+                    condition["ticket.state_id"] = {"operator": zammad_op, "value": zammad_ids}
+            continue
+
+        # --- assigned_to_id ---
+        if field == "assigned_to_id":
+            if operator_raw in ("=", "!") and values:
+                zammad_ids = [str(migration_map["users"].get(rid)) for rid in values if migration_map["users"].get(rid)]
+                if zammad_ids:
+                    condition["ticket.owner_id"] = {"operator": op_map[operator_raw], "value": zammad_ids}
+            continue
+
+        # --- tracker_id → group ---
+        if field == "tracker_id":
+            if operator_raw in ("=", "!") and values:
+                gids = [
+                    str(tracker_group_ids[f"tracker_{rid}"]) for rid in values if f"tracker_{rid}" in tracker_group_ids
+                ]
+                if gids:
+                    condition["ticket.group_id"] = {"operator": op_map[operator_raw], "value": gids}
+            continue
+
+        # --- due_date ---
+        # Redmine's "due_date !*" (no due date set) has no direct equivalent in Zammad
+        # overview conditions — skip silently rather than emit an invalid condition.
+        if field == "due_date":
+            continue
+
+        # --- cf_N (custom fields) ---
+        if field.startswith("cf_"):
+            zammad_name = cf_zammad_name.get(field)
+            if not zammad_name:
+                continue
+            zammad_op = op_map.get(operator_raw)
+            if zammad_op is None:
+                continue
+            if values:
+                condition[f"ticket.{zammad_name}"] = {"operator": zammad_op, "value": values}
+            continue
+
+        # All other fields (child_id, project_id, etc.) are silently skipped.
+
+    return condition
+
+
+def _migrate_overviews(conn, api: _ZammadAPI, migration_map: dict, toml: dict, error_log: logging.Logger) -> None:
+    queries = _read_redmine_queries(conn)
+    print(f"\nMigrating {len(queries)} Redmine queries → Zammad overviews...")
+    migrated = skipped = 0
+
+    # Sort field mapping: Redmine field → Zammad order.by value (bare name, no ticket. prefix).
+    sort_field_map = {
+        "due_date": "pending_time",
+        "updated_on": "updated_at",
+        "created_on": "created_at",
+        "priority": "priority_id",
+        "status": "state_id",
+        "id": "number",
+        "subject": "title",
+        "assigned_to": "owner_id",
+    }
+    # group_by mapping: Redmine field → Zammad bare field name (no ticket. prefix).
+    group_by_map = {
+        "status": "state_id",
+        "priority": "priority_id",
+        "assigned_to": "owner_id",
+        "tracker": "group_id",
+    }
+    # Standard column set shown in overview tables (desktop / small / mobile views).
+    default_view = {
+        "d": ["title", "customer", "group", "created_at"],
+        "s": ["title", "customer", "group", "created_at"],
+        "m": ["number", "title", "customer", "group", "created_at"],
+        "view_mode_default": "s",
+    }
+    # Role IDs: 1=Admin, 2=Agent (Zammad built-in, stable across instances).
+    agent_role_ids = [1, 2]
+
+    # Fetch all Zammad state IDs for use as an "all tickets" catch-all condition.
+    # Zammad rejects overviews with empty or invalid conditions, so a query with no filters
+    # (or filters that can't be mapped) needs an explicit "state is any of all states" condition.
+    all_state_ids = [str(s["id"]) for s in api.get("ticket_states")]
+
+    migration_map.setdefault("overviews", {})
+
+    for query in queries:
+        redmine_id = str(query["id"])
+        if redmine_id in migration_map["overviews"]:
+            skipped += 1
+            continue
+
+        condition = _parse_redmine_filters(query["filters"], migration_map, toml, error_log, query["name"])
+
+        # Build sort order from first sort_criteria entry.
+        import yaml as _yaml
+
+        order: dict = {"by": "created_at", "direction": "ASC"}
+        sort_raw = query["sort_criteria"]
+        if sort_raw and sort_raw.strip() not in ("---", ""):
+            try:
+                sort_list = _yaml.safe_load(sort_raw) or []
+                if sort_list and isinstance(sort_list[0], list) and len(sort_list[0]) == 2:  # noqa: PLR2004
+                    field, direction = sort_list[0]
+                    zammad_field = sort_field_map.get(str(field))
+                    if zammad_field:
+                        order = {"by": zammad_field, "direction": str(direction).upper()}
+            except Exception:  # noqa: S110
+                pass
+
+        # group_by (bare field name, no ticket. prefix)
+        group_by: str | None = None
+        if query["group_by"]:
+            group_by = group_by_map.get(str(query["group_by"]))
+
+        overview_data: dict = {
+            "name": query["name"],
+            "condition": condition or {"ticket.state_id": {"operator": "is", "value": all_state_ids}},
+            "order": order,
+            "view": default_view,
+            "active": True,
+            "role_ids": agent_role_ids,
+        }
+        if group_by:
+            overview_data["group_by"] = group_by
+
+        try:
+            result = api.post("overviews", overview_data)
+        except _ZammadAPIError:
+            # Already exists — find by name.
+            all_overviews = api.search("overviews")
+            match = next((o for o in all_overviews if o.get("name") == query["name"]), None)
+            if not match:
+                error_log.error(f"Overview '{query['name']}': creation failed and not found by name")
+                continue
+            result = match
+        except Exception as e:
+            error_log.error(f"Overview '{query['name']}': {e}")
+            continue
+
+        migration_map["overviews"][redmine_id] = result["id"]
+        migrated += 1
+
+    print(f"  Overviews: {migrated} migrated, {skipped} skipped")
+    _save_migration_map(migration_map, api.dry_run)
+
+
 def _run_migration(conn, api: _ZammadAPI, migration_map: dict, toml: dict, error_log: logging.Logger) -> None:
     """Run all migration steps in order."""
     # Tags can come from a plugin table or from a list-type custom field (name configured in TOML).
@@ -1152,6 +1445,7 @@ def _run_migration(conn, api: _ZammadAPI, migration_map: dict, toml: dict, error
     )
     _migrate_articles(conn, api, migration_map, error_log)
     _migrate_links(conn, api, migration_map, error_log)
+    _migrate_overviews(conn, api, migration_map, toml, error_log)
 
 
 # --- Migration task ---
@@ -1240,6 +1534,7 @@ def zammad_migrate(
     print(f"  Articles:      {len(migration_map['articles'])}")
     print(f"  Links:         {len(migration_map.get('links', {}))}")
     print(f"  Custom fields: {len(migration_map['custom_fields'])}")
+    print(f"  Overviews:     {len(migration_map.get('overviews', {}))}")
     if error_count:
         print_error(f"  Errors:        {error_count} (see {ERROR_LOG})")
     else:
