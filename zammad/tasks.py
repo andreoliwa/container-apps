@@ -848,8 +848,13 @@ def _migrate_users(conn, api: _ZammadAPI, migration_map: dict, error_log: loggin
                 )
                 continue
             # Update the found user so all fields are in sync.
+            # Don't overwrite login if the existing Zammad account uses a different one —
+            # that would cause a "Login already taken" conflict with itself or another user.
+            fields = user_fields(user, login, email)
+            if match.get("login") != login:
+                del fields["login"]
             try:
-                api.put(f"users/{match['id']}", user_fields(user, login, email))
+                api.put(f"users/{match['id']}", fields)
             except _ZammadAPIError as e:
                 error_log.error(f"User {user['id']} ({login}) update after find: {e}")
             result = match
@@ -1099,8 +1104,13 @@ def _resolve_default_customer(
             return zammad_id
 
     # Fall back to searching Zammad directly (e.g. built-in admin not in the migration map).
+    # The search index may not include system users, so also try listing all users as a fallback.
     results = api.search(f"users/search?query=login:{login}&limit=1")
     match = next((u for u in results if u.get("login") == login), None)
+    if not match:
+        all_users = api.get("users?expand=true")
+        if isinstance(all_users, list):
+            match = next((u for u in all_users if u.get("login") == login), None)
     if not match:
         error_log.error(f"default_customer_login '{login}' not found in Zammad")
         return None
@@ -1176,6 +1186,13 @@ def _migrate_tickets(
             continue
 
         customer_id = migration_map["users"].get(str(issue["author_id"])) or default_customer_id
+        if not customer_id:
+            error_log.error(
+                f"Issue {issue['id']} ({issue['subject'][:50]}): no customer_id "
+                "(author not migrated and no default_customer_login configured) — skipping"
+            )
+            skipped += 1
+            continue
         owner_id = migration_map["users"].get(str(issue["assigned_to_id"])) if issue["assigned_to_id"] else None
 
         state_id = _resolve_state_id(
@@ -1739,13 +1756,13 @@ def _run_migration(conn, api: _ZammadAPI, migration_map: dict, toml: dict, error
     _migrate_organizations(api, migration_map, toml, error_log)
     _migrate_users(conn, api, migration_map, error_log)
     _migrate_group(conn, api, migration_map, toml, error_log)
+    _migrate_overviews(conn, api, migration_map, toml, error_log)
     _migrate_tickets(
         conn, api, migration_map, toml, tags_by_issue, error_log, tags_cf_id=tags_cf_id, tags_cf_name=tags_cf_name
     )
     _repair_article_bodies(migration_map, redmine_base_url, api.dry_run)
     _migrate_articles(conn, api, migration_map, error_log)
     _migrate_links(conn, api, migration_map, error_log)
-    _migrate_overviews(conn, api, migration_map, toml, error_log)
 
 
 # --- Migration task ---
