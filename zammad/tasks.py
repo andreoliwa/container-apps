@@ -119,13 +119,16 @@ def zammad_down(c: Context) -> None:
     c.run(f"docker compose {cf} down")
 
 
-def _psql_delete(sql: str, dry_run: bool) -> None:
-    """Execute a SQL statement via docker exec on postgres17/zammad. No-op in dry-run mode."""
+def _psql_delete(sql: str, dry_run: bool) -> bool:
+    """Execute a SQL statement via docker exec on postgres17/zammad. No-op in dry-run mode.
+
+    Returns True on success, False on failure.
+    """
     import subprocess
 
     if dry_run:
         print(f"  [DRY-RUN] {sql}")
-        return
+        return True
     result = subprocess.run(
         ["docker", "exec", "postgres17", "psql", "-U", "postgres", "-d", "zammad", "-c", sql],
         capture_output=True,
@@ -134,6 +137,8 @@ def _psql_delete(sql: str, dry_run: bool) -> None:
     )
     if result.returncode != 0:
         print_error(f"DB error: {result.stderr.strip()}")
+        return False
+    return True
 
 
 def _wipe_via_db(migration_map: dict, dry_run: bool) -> None:
@@ -159,55 +164,88 @@ def _wipe_via_db(migration_map: dict, dry_run: bool) -> None:
     def _ids_sql(ids: list) -> str:
         return "ARRAY[" + ",".join(str(int(i)) for i in ids) + "]"
 
+    ok = True  # tracks whether all statements succeeded
+
     # All SQL strings below use only integer IDs from migration_map.json — noqa: S608 is safe here.
     if article_ids:
         print(f"  Deleting {len(article_ids)} articles...")
-        _psql_delete(f"DELETE FROM ticket_articles WHERE id = ANY({_ids_sql(article_ids)});", dry_run)  # noqa: S608
+        ok &= _psql_delete(f"DELETE FROM ticket_articles WHERE id = ANY({_ids_sql(article_ids)});", dry_run)  # noqa: S608
 
     if ticket_ids:
         print(f"  Deleting {len(ticket_ids)} tickets (and their dependent rows)...")
-        # Delete FK-dependent rows first, then tickets themselves.
-        _psql_delete(f"DELETE FROM ticket_time_accountings WHERE ticket_id = ANY({_ids_sql(ticket_ids)});", dry_run)  # noqa: S608
-        _psql_delete(f"DELETE FROM mentions WHERE ticket_id = ANY({_ids_sql(ticket_ids)});", dry_run)  # noqa: S608
         ids = _ids_sql(ticket_ids)
-        _psql_delete(
+        # Delete FK-dependent rows first, then tickets themselves.
+        # mentions uses a polymorphic association (mentionable_type/id), not a direct ticket_id FK.
+        ok &= _psql_delete(
+            f"DELETE FROM mentions WHERE mentionable_type = 'Ticket' AND mentionable_id = ANY({ids});",  # noqa: S608
+            dry_run,
+        )
+        ok &= _psql_delete(f"DELETE FROM ticket_time_accountings WHERE ticket_id = ANY({ids});", dry_run)  # noqa: S608
+        ok &= _psql_delete(f"DELETE FROM ticket_daily_event_locks WHERE ticket_id = ANY({ids});", dry_run)  # noqa: S608
+        ok &= _psql_delete(f"DELETE FROM ticket_shared_draft_zooms WHERE ticket_id = ANY({ids});", dry_run)  # noqa: S608
+        ok &= _psql_delete(f"DELETE FROM checklist_items WHERE ticket_id = ANY({ids});", dry_run)  # noqa: S608
+        ok &= _psql_delete(
             f"DELETE FROM links WHERE link_object_source_value = ANY({ids}) OR link_object_target_value = ANY({ids});",  # noqa: S608
             dry_run,
         )
-        _psql_delete(f"DELETE FROM tags WHERE o_id = ANY({_ids_sql(ticket_ids)});", dry_run)  # noqa: S608
-        _psql_delete(f"DELETE FROM activity_streams WHERE o_id = ANY({_ids_sql(ticket_ids)});", dry_run)  # noqa: S608
-        _psql_delete(f"DELETE FROM tickets WHERE id = ANY({_ids_sql(ticket_ids)});", dry_run)  # noqa: S608
+        ok &= _psql_delete(f"DELETE FROM tags WHERE o_id = ANY({ids});", dry_run)  # noqa: S608
+        ok &= _psql_delete(f"DELETE FROM activity_streams WHERE o_id = ANY({ids});", dry_run)  # noqa: S608
+        ok &= _psql_delete(f"DELETE FROM tickets WHERE id = ANY({ids});", dry_run)  # noqa: S608
 
     if overview_ids:
         print(f"  Deleting {len(overview_ids)} overviews...")
-        _psql_delete(f"DELETE FROM overviews WHERE id = ANY({_ids_sql(overview_ids)});", dry_run)  # noqa: S608
+        ids = _ids_sql(overview_ids)
+        ok &= _psql_delete(f"DELETE FROM overviews_roles WHERE overview_id = ANY({ids});", dry_run)  # noqa: S608
+        ok &= _psql_delete(f"DELETE FROM overviews_users WHERE overview_id = ANY({ids});", dry_run)  # noqa: S608
+        ok &= _psql_delete(f"DELETE FROM overviews_groups WHERE overview_id = ANY({ids});", dry_run)  # noqa: S608
+        ok &= _psql_delete(f"DELETE FROM overviews WHERE id = ANY({ids});", dry_run)  # noqa: S608
 
     if user_ids:
         print(f"  Deleting {len(user_ids)} users...")
-        _psql_delete(f"DELETE FROM cti_caller_ids WHERE user_id = ANY({_ids_sql(user_ids)});", dry_run)  # noqa: S608
-        _psql_delete(f"DELETE FROM groups_users WHERE user_id = ANY({_ids_sql(user_ids)});", dry_run)  # noqa: S608
-        _psql_delete(f"DELETE FROM roles_users WHERE user_id = ANY({_ids_sql(user_ids)});", dry_run)  # noqa: S608
-        _psql_delete(f"DELETE FROM organizations_users WHERE user_id = ANY({_ids_sql(user_ids)});", dry_run)  # noqa: S608
-        _psql_delete(f"DELETE FROM users WHERE id = ANY({_ids_sql(user_ids)});", dry_run)  # noqa: S608
+        ids = _ids_sql(user_ids)
+        ok &= _psql_delete(
+            f"DELETE FROM online_notifications WHERE user_id = ANY({ids}) OR created_by_id = ANY({ids});",  # noqa: S608
+            dry_run,
+        )
+        ok &= _psql_delete(f"DELETE FROM taskbars WHERE user_id = ANY({ids});", dry_run)  # noqa: S608
+        ok &= _psql_delete(f"DELETE FROM recent_views WHERE created_by_id = ANY({ids});", dry_run)  # noqa: S608
+        ok &= _psql_delete(f"DELETE FROM recent_closes WHERE user_id = ANY({ids});", dry_run)  # noqa: S608
+        ok &= _psql_delete(f"DELETE FROM user_devices WHERE user_id = ANY({ids});", dry_run)  # noqa: S608
+        ok &= _psql_delete(f"DELETE FROM user_overview_sortings WHERE user_id = ANY({ids});", dry_run)  # noqa: S608
+        ok &= _psql_delete(f"DELETE FROM user_two_factor_preferences WHERE user_id = ANY({ids});", dry_run)  # noqa: S608
+        ok &= _psql_delete(f"DELETE FROM cti_caller_ids WHERE user_id = ANY({ids});", dry_run)  # noqa: S608
+        ok &= _psql_delete(f"DELETE FROM groups_users WHERE user_id = ANY({ids});", dry_run)  # noqa: S608
+        ok &= _psql_delete(f"DELETE FROM roles_users WHERE user_id = ANY({ids});", dry_run)  # noqa: S608
+        ok &= _psql_delete(f"DELETE FROM organizations_users WHERE user_id = ANY({ids});", dry_run)  # noqa: S608
+        ok &= _psql_delete(f"DELETE FROM users WHERE id = ANY({ids});", dry_run)  # noqa: S608
 
     if org_ids:
         print(f"  Deleting {len(org_ids)} organizations...")
-        _psql_delete(f"DELETE FROM organizations WHERE id = ANY({_ids_sql(org_ids)});", dry_run)  # noqa: S608
+        ids = _ids_sql(org_ids)
+        # Null out organization_id on any remaining users before deleting orgs.
+        ok &= _psql_delete(f"UPDATE users SET organization_id = NULL WHERE organization_id = ANY({ids});", dry_run)  # noqa: S608
+        ok &= _psql_delete(f"DELETE FROM organizations WHERE id = ANY({ids});", dry_run)  # noqa: S608
 
     if group_ids:
         print(f"  Deleting {len(group_ids)} groups...")
-        _psql_delete(f"DELETE FROM groups_macros WHERE group_id = ANY({_ids_sql(group_ids)});", dry_run)  # noqa: S608
-        _psql_delete(f"DELETE FROM groups_text_modules WHERE group_id = ANY({_ids_sql(group_ids)});", dry_run)  # noqa: S608
-        _psql_delete(f"DELETE FROM groups WHERE id = ANY({_ids_sql(group_ids)});", dry_run)  # noqa: S608
+        ids = _ids_sql(group_ids)
+        # Null out group_id on any remaining tickets before deleting groups.
+        ok &= _psql_delete(f"UPDATE tickets SET group_id = NULL WHERE group_id = ANY({ids});", dry_run)  # noqa: S608
+        ok &= _psql_delete(f"DELETE FROM groups_macros WHERE group_id = ANY({ids});", dry_run)  # noqa: S608
+        ok &= _psql_delete(f"DELETE FROM groups_text_modules WHERE group_id = ANY({ids});", dry_run)  # noqa: S608
+        ok &= _psql_delete(f"DELETE FROM groups WHERE id = ANY({ids});", dry_run)  # noqa: S608
 
     if cf_ids:
         print(f"  Deleting {len(cf_ids)} custom fields...")
-        _psql_delete(f"DELETE FROM object_manager_attributes WHERE id = ANY({_ids_sql(cf_ids)});", dry_run)  # noqa: S608
+        ok &= _psql_delete(f"DELETE FROM object_manager_attributes WHERE id = ANY({_ids_sql(cf_ids)});", dry_run)  # noqa: S608
 
     if not dry_run:
-        MAP_FILE.unlink()
-        print("\n✅ migration_map.json deleted.")
-        print("✅ Wipe complete. You can now re-run invoke zammad-migrate.")
+        if ok:
+            MAP_FILE.unlink()
+            print("\n✅ migration_map.json deleted.")
+            print("✅ Wipe complete. You can now re-run invoke zammad-migrate.")
+        else:
+            print_warning("\n⚠️  Some deletions failed — migration_map.json kept so you can retry.")
 
 
 @task(help={"drop": "Drop the zammad database entirely and return (skips per-entity cleanup)"})
