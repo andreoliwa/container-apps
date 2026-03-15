@@ -101,6 +101,15 @@ cp zammad/zammad.toml.example zammad/zammad.toml
 # edit zammad/zammad.toml
 ```
 
+### Before running the migration
+
+Generate an API token in Zammad: **Admin → API Token → New API Token** — give it a name, set
+**Expiry** to unlimited, and check all permissions. Export it:
+
+```bash
+export ZAMMAD_TOKEN=<token>
+```
+
 ### Running the migration
 
 ```bash

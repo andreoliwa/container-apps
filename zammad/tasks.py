@@ -231,6 +231,7 @@ def _wipe_via_db(migration_map: dict, dry_run: bool) -> None:
         ids = _ids_sql(group_ids)
         # Null out group_id on any remaining tickets before deleting groups.
         ok &= _psql_delete(f"UPDATE tickets SET group_id = NULL WHERE group_id = ANY({ids});", dry_run)  # noqa: S608
+        ok &= _psql_delete(f"DELETE FROM groups_users WHERE group_id = ANY({ids});", dry_run)  # noqa: S608
         ok &= _psql_delete(f"DELETE FROM groups_macros WHERE group_id = ANY({ids});", dry_run)  # noqa: S608
         ok &= _psql_delete(f"DELETE FROM groups_text_modules WHERE group_id = ANY({ids});", dry_run)  # noqa: S608
         ok &= _psql_delete(f"DELETE FROM groups WHERE id = ANY({ids});", dry_run)  # noqa: S608
@@ -802,18 +803,59 @@ def _ensure_redmine_status_field(conn, api: _ZammadAPI, migration_map: dict, err
     return True
 
 
+def _upsert_zammad_user(
+    api: _ZammadAPI,
+    fields: dict,
+    roles: list[str],
+    error_log: logging.Logger,
+    label: str,
+) -> dict | None:
+    """POST a new Zammad user; on conflict find by email then login, PUT to sync fields.
+
+    Returns the Zammad user dict on success, None on failure.
+    `fields` must contain at least 'login', 'email', 'firstname', 'lastname'.
+    `label` is used in error messages (e.g. "User 42 (jdoe)" or "Customer john@example.com").
+    """
+    login = fields["login"]
+    email = fields["email"]
+    try:
+        return api.post("users", {**fields, "roles": roles})
+    except _ZammadAPIError as post_err:
+        match = None
+        if email:
+            by_email = api.search(f"users/search?query=email:{email}&limit=1")
+            match = next((u for u in by_email if u.get("email") == email), None)
+        if not match:
+            by_login = api.search(f"users/search?query=login:{login}&limit=1")
+            match = next((u for u in by_login if u.get("login") == login), None)
+        if not match:
+            error_log.error(f"{label}: creation failed ({post_err}) and not found by email or login")
+            return None
+        # Sync fields; don't overwrite login if the existing account uses a different one —
+        # that would cause a "Login already taken" conflict with itself or another user.
+        update = dict(fields)
+        if match.get("login") != login:
+            del update["login"]
+        try:
+            api.put(f"users/{match['id']}", update)
+        except _ZammadAPIError as e:
+            error_log.error(f"{label} update after find: {e}")
+        return match
+
+
 def _migrate_users(conn, api: _ZammadAPI, migration_map: dict, error_log: logging.Logger) -> None:
     users = _read_redmine_users(conn)
     print(f"\nMigrating {len(users)} users...")
     migrated = skipped = updated = 0
 
-    user_fields = lambda u, login, email: {  # noqa: E731
-        "login": login,
-        "firstname": u["firstname"] or "Unknown",
-        "lastname": u["lastname"] or "User",
-        "email": email,
-        "active": u["status"] == 1,
-    }
+    def _fields(user, login, email) -> dict:
+        return {
+            "login": login,
+            "firstname": user["firstname"] or "Unknown",
+            "lastname": user["lastname"] or "User",
+            "email": email,
+            "active": user["status"] == 1,
+        }
 
     for user in users:
         redmine_id = str(user["id"])
@@ -821,43 +863,20 @@ def _migrate_users(conn, api: _ZammadAPI, migration_map: dict, error_log: loggin
         email = user["mail"] or f"redmine_user_{user['id']}@migration.local"
 
         if redmine_id in migration_map["users"]:
-            # User already migrated — sync all fields in case they changed.
             zammad_id = migration_map["users"][redmine_id]
             try:
-                api.put(f"users/{zammad_id}", user_fields(user, login, email))
+                api.put(f"users/{zammad_id}", _fields(user, login, email))
                 updated += 1
             except _ZammadAPIError as e:
                 error_log.error(f"User {user['id']} ({login}) update: {e}")
             skipped += 1
             continue
 
-        try:
-            result = api.post("users", {**user_fields(user, login, email), "roles": ["Agent", "Customer"]})
-        except _ZammadAPIError as post_err:
-            # User already exists — find by email first, then fall back to login.
-            match = None
-            if user["mail"]:
-                by_email = api.search(f"users/search?query=email:{user['mail']}&limit=1")
-                match = next((u for u in by_email if u.get("email") == user["mail"]), None)
-            if not match:
-                by_login = api.search(f"users/search?query=login:{login}&limit=1")
-                match = next((u for u in by_login if u.get("login") == login), None)
-            if not match:
-                error_log.error(
-                    f"User {user['id']} ({login}): creation failed ({post_err}) and user not found by login or email"
-                )
-                continue
-            # Update the found user so all fields are in sync.
-            # Don't overwrite login if the existing Zammad account uses a different one —
-            # that would cause a "Login already taken" conflict with itself or another user.
-            fields = user_fields(user, login, email)
-            if match.get("login") != login:
-                del fields["login"]
-            try:
-                api.put(f"users/{match['id']}", fields)
-            except _ZammadAPIError as e:
-                error_log.error(f"User {user['id']} ({login}) update after find: {e}")
-            result = match
+        result = _upsert_zammad_user(
+            api, _fields(user, login, email), ["Agent", "Customer"], error_log, f"User {user['id']} ({login})"
+        )
+        if result is None:
+            continue
         migration_map["users"][redmine_id] = result["id"]
         migrated += 1
 
@@ -953,7 +972,6 @@ def _migrate_customers(api: _ZammadAPI, migration_map: dict, toml: dict, error_l
             "login": login,
             "firstname": firstname,
             "lastname": lastname,
-            "roles": ["Customer"],
             "active": True,
         }
 
@@ -969,16 +987,9 @@ def _migrate_customers(api: _ZammadAPI, migration_map: dict, toml: dict, error_l
             else:
                 error_log.warning(f"Customer '{email}': organization '{org_name}' not found — skipping org assignment")
 
-        try:
-            result = api.post("users", payload)
-        except _ZammadAPIError as post_err:
-            # Already exists — find by email.
-            by_email = api.search(f"users/search?query=email:{email}&limit=1")
-            match = next((u for u in by_email if u.get("email") == email), None)
-            if not match:
-                error_log.error(f"Customer '{email}': creation failed ({post_err}) and not found by email")
-                continue
-            result = match
+        result = _upsert_zammad_user(api, payload, ["Customer"], error_log, f"Customer '{email}'")
+        if result is None:
+            continue
 
         migration_map["customers"][email] = result["id"]
         migrated += 1
@@ -1050,7 +1061,7 @@ def _migrate_group(conn, api: _ZammadAPI, migration_map: dict, toml: dict, error
             gid: ["full"] for gid in all_group_ids if gid not in current_groups and str(gid) not in current_groups
         }
         if new_entries:
-            api.put(f"users/{uid}", {"group_ids": {**current_groups, **new_entries}})
+            api.put(f"users/{uid}", {"group_ids": new_entries})
 
 
 def _migrate_custom_fields(
@@ -1384,14 +1395,17 @@ def _migrate_articles(conn, api: _ZammadAPI, migration_map: dict, error_log: log
     _save_migration_map(migration_map, api.dry_run)
 
 
-def _repair_article_bodies(migration_map: dict, redmine_base_url: str, dry_run: bool) -> None:
+def _repair_article_bodies(
+    migration_map: dict, redmine_base_url: str, dry_run: bool, skip_first_keys: set[str] | None = None
+) -> None:
     r"""Ensure every first-article body starts with the Redmine issue URL header.
 
     The header format is:
         <p><a href="URL">URL</a></p>\n
     Articles are immutable via Zammad's REST API, so we update the DB directly.
     Only processes tickets whose first-article ID was recorded in migration_map["articles"].
-    Idempotent: articles that already have the URL header are not modified.
+    `skip_first_keys`: set of "<redmine_id>_first" keys to exclude — used to skip articles
+    whose body was already written with the URL header by _issue_body on this run.
     """
     import re
     import subprocess
@@ -1400,7 +1414,9 @@ def _repair_article_bodies(migration_map: dict, redmine_base_url: str, dry_run: 
         return
 
     first_articles = {
-        k.removesuffix("_first"): v for k, v in migration_map.get("articles", {}).items() if k.endswith("_first")
+        k.removesuffix("_first"): v
+        for k, v in migration_map.get("articles", {}).items()
+        if k.endswith("_first") and (skip_first_keys is None or k not in skip_first_keys)
     }
     if not first_articles:
         return
@@ -1677,7 +1693,7 @@ def _parse_redmine_filters(
 
 
 def _migrate_overviews(conn, api: _ZammadAPI, migration_map: dict, _toml: dict, error_log: logging.Logger) -> None:
-    queries = _read_redmine_queries(conn)
+    queries = sorted(_read_redmine_queries(conn), key=lambda q: q["name"].lower())
     print(f"\nMigrating {len(queries)} Redmine queries → Zammad overviews...")
     migrated = skipped = 0
 
@@ -1826,10 +1842,20 @@ def _run_migration(conn, api: _ZammadAPI, migration_map: dict, toml: dict, error
     _migrate_users(conn, api, migration_map, error_log)
     _migrate_group(conn, api, migration_map, toml, error_log)
     _migrate_overviews(conn, api, migration_map, toml, error_log)
+    # Snapshot _first keys that exist before this run: only those may need the URL header
+    # repaired (tickets from a previous run where redmine_url wasn't set, or the _first key
+    # was not yet recorded). Tickets created on this run already have the URL from _issue_body.
+    first_keys_before = {k for k in migration_map.get("articles", {}) if k.endswith("_first")}
     _migrate_tickets(
         conn, api, migration_map, toml, tags_by_issue, error_log, tags_cf_id=tags_cf_id, tags_cf_name=tags_cf_name
     )
-    _repair_article_bodies(migration_map, redmine_base_url, api.dry_run)
+    # After _migrate_tickets, new _first keys were added (both freshly created tickets and
+    # backfilled ones from the skipped path). All of those bodies were written by _issue_body
+    # with the URL already present — exclude them from repair.
+    first_keys_added_this_run = {
+        k for k in migration_map.get("articles", {}) if k.endswith("_first")
+    } - first_keys_before
+    _repair_article_bodies(migration_map, redmine_base_url, api.dry_run, skip_first_keys=first_keys_added_this_run)
     _migrate_articles(conn, api, migration_map, error_log)
     _migrate_links(conn, api, migration_map, error_log)
 
