@@ -24,7 +24,7 @@ MAP_FILE = ZAMMAD_DIR / "migration_map.json"
 ERROR_LOG = ZAMMAD_DIR / "migration_errors.log"
 TOML_FILE = ZAMMAD_DIR / "zammad.toml"
 
-# Map key used in TOML [states] entries
+# Key used in TOML [states] entries to specify the target Zammad state type
 TOML_STATE_TYPE_KEY = "zammad_type"
 
 # Map key used in migration_map["groups"] for the import group
@@ -56,7 +56,6 @@ class _Priority(str, Enum):
     HIGH = "3 high"
 
 
-VALID_STATE_TYPES = {t.value for t in _StateType}
 PENDING_STATE_TYPES = {_StateType.PENDING_REMINDER.value, _StateType.PENDING_ACTION.value}
 
 
@@ -144,6 +143,7 @@ def zammad_wipe(c: Context) -> None:
     total_failed = 0
     total_failed += _wipe_collection(api, "tickets", "tickets", migration_map, "tickets")
     total_failed += _wipe_collection(api, "users", "users", migration_map, "users")
+    total_failed += _wipe_collection(api, "customers", "users", migration_map, "customers")
     total_failed += _wipe_collection(api, "organizations", "organizations", migration_map, "organizations")
     total_failed += _wipe_collection(api, "groups", "groups", migration_map, "groups")
     total_failed += _wipe_collection(api, "overviews", "overviews", migration_map, "overviews")
@@ -313,6 +313,7 @@ def _load_migration_map() -> dict:
         return json.loads(MAP_FILE.read_text())
     return {
         "users": {},
+        "customers": {},
         "groups": {},
         "organizations": {},
         "tickets": {},
@@ -660,20 +661,15 @@ def _read_tags_from_custom_field(conn, tags_cf_id: int) -> dict[int, list[str]]:
 
 def _resolve_state_id(
     redmine_status_id: int,
-    is_closed: bool,
-    due_date,
     migration_map: dict,
-    pending_reminder_state_id: int | None,
 ) -> int | None:
-    """Return the Zammad state ID for a Redmine issue.
-
-    Due-date rule: if the issue has a due_date and is not closed, always use the
-    pending-reminder state regardless of the TOML mapping.
-    Otherwise, use the pre-resolved redmine_status_<id> entry from migration_map.
-    """
-    if not is_closed and due_date:
-        return pending_reminder_state_id
+    """Return the Zammad state ID for a Redmine issue status."""
     return migration_map["states"].get(f"redmine_status_{redmine_status_id}")
+
+
+def _state_is_fallback(redmine_status_id: int, migration_map: dict) -> bool:
+    """Return True if the state was mapped via the pending-reminder fallback (no name match)."""
+    return bool(migration_map["states"].get(f"redmine_status_{redmine_status_id}__fallback"))
 
 
 # --- Migration steps ---
@@ -682,65 +678,70 @@ def _resolve_state_id(
 def _resolve_and_store_states(
     conn, api: _ZammadAPI, migration_map: dict, toml: dict, error_log: logging.Logger
 ) -> None:
-    """Resolve Redmine statuses → built-in Zammad state IDs via the TOML [states] mapping.
+    """Resolve Redmine statuses → Zammad state IDs via the TOML [states] mapping.
 
-    Does NOT create any new Zammad states. Instead, looks up the existing built-in states
-    (open, closed, pending reminder, pending action) and stores the mapping:
-        migration_map["states"]["redmine_status_<id>"] = <zammad_state_id>
+    For each Redmine status, reads the `zammad_type` from TOML and picks the first
+    existing Zammad state whose state_type matches. Does NOT create new Zammad states.
 
-    This map is used by _parse_redmine_filters (overviews) and by _resolve_state_id
-    at ticket creation time.
+    If the Redmine status has no TOML entry (or the mapped type has no matching Zammad
+    state), falls back to "pending reminder" and marks the key with __fallback so
+    _migrate_tickets sets pending_time = created_on.
+
+    migration_map["states"]["redmine_status_<id>"] = <zammad_state_id>
+    migration_map["states"]["redmine_status_<id>__fallback"] = True  (fallback only)
     """
     state_map = toml.get("states", {})
 
-    # Fetch all Redmine statuses.
     with conn.cursor() as cur:
         cur.execute("SELECT id, name, is_closed FROM issue_statuses ORDER BY id")
-        redmine_statuses = cur.fetchall()  # list of (id, name, is_closed)
+        redmine_statuses = cur.fetchall()
 
-    # Fetch all existing Zammad states; build name → id lookup.
     existing_states = api.get("ticket_states?expand=true")
-    zammad_state_name_to_id: dict[str, int] = {s["name"]: s["id"] for s in existing_states}
-    # Also build state_type → first matching state ID, for fallback resolution.
-    zammad_state_type_to_id: dict[str, int] = {}
+    # Build state_type → first matching Zammad state ID.
+    zammad_type_to_id: dict[str, int] = {}
     for s in existing_states:
         st = s.get("state_type", "")
-        if st and st not in zammad_state_type_to_id:
-            zammad_state_type_to_id[st] = s["id"]
+        if st and st not in zammad_type_to_id:
+            zammad_type_to_id[st] = s["id"]
+
+    pending_reminder_id = zammad_type_to_id.get(_StateType.PENDING_REMINDER.value)
 
     print(f"\nResolving {len(redmine_statuses)} Redmine statuses → Zammad states...")
-    stored = skipped = 0
+    stored = skipped = fallbacks = 0
 
     for row in redmine_statuses:
-        redmine_id, status_name, is_closed = row[0], row[1], row[2]
+        redmine_id, status_name, _is_closed = row[0], row[1], row[2]
         redmine_key = f"redmine_status_{redmine_id}"
 
         if redmine_key in migration_map["states"]:
             skipped += 1
             continue
 
-        # Determine the target Zammad state type from TOML, with is_closed as fallback.
-        if is_closed:
-            zammad_type = _StateType.CLOSED.value
+        cfg = state_map.get(status_name, {})
+        zammad_type = cfg.get(TOML_STATE_TYPE_KEY)
+        zammad_state_id = zammad_type_to_id.get(zammad_type) if zammad_type else None
+
+        if zammad_state_id:
+            migration_map["states"][redmine_key] = zammad_state_id
+            stored += 1
         else:
-            cfg = state_map.get(status_name, {})
-            zammad_type = cfg.get(TOML_STATE_TYPE_KEY, _StateType.OPEN.value)
+            if not zammad_type:
+                error_log.warning(f"State '{status_name}': not in TOML [states] — falling back to 'pending reminder'")
+            else:
+                error_log.warning(
+                    f"State '{status_name}': no Zammad state with type '{zammad_type}'"
+                    " — falling back to 'pending reminder'"
+                )
+            if not pending_reminder_id:
+                error_log.error(f"State '{status_name}': 'pending reminder' state not found in Zammad — skipping")
+                continue
+            migration_map["states"][redmine_key] = pending_reminder_id
+            migration_map["states"][f"{redmine_key}__fallback"] = True
+            fallbacks += 1
+            stored += 1
 
-        if zammad_type not in VALID_STATE_TYPES:
-            error_log.error(f"State '{status_name}': unknown zammad_type '{zammad_type}' in TOML")
-            continue
-
-        # Resolve to a Zammad state ID: prefer a state whose name matches the TOML key,
-        # then fall back to the first state of the correct type.
-        zammad_state_id = zammad_state_name_to_id.get(status_name) or zammad_state_type_to_id.get(zammad_type)
-        if not zammad_state_id:
-            error_log.error(f"State '{status_name}': no Zammad state found for type '{zammad_type}'")
-            continue
-
-        migration_map["states"][redmine_key] = zammad_state_id
-        stored += 1
-
-    print(f"  States: {stored} resolved, {skipped} skipped (already done)")
+    fallback_note = f", {fallbacks} fell back to pending reminder" if fallbacks else ""
+    print(f"  States: {stored} resolved, {skipped} skipped (already done){fallback_note}")
     _save_migration_map(migration_map, api.dry_run)
 
 
@@ -914,6 +915,76 @@ def _migrate_organizations(api: _ZammadAPI, migration_map: dict, toml: dict, err
         migrated += 1
 
     print(f"  Organizations: {migrated} created, {skipped} skipped")
+    _save_migration_map(migration_map, api.dry_run)
+
+
+def _migrate_customers(api: _ZammadAPI, migration_map: dict, toml: dict, error_log: logging.Logger) -> None:
+    """Create Zammad customer accounts from the [customers] table in zammad.toml.
+
+    TOML format:
+        [customers]
+        "john@example.com" = { firstname = "John", lastname = "Doe", login = "john" }
+        "jane@example.com" = {}  # firstname/lastname/login derived from email if omitted
+
+    The email address is the unique key. All other fields are optional.
+    Idempotent: skips entries already recorded in migration_map["customers"].
+    """
+    customers = toml.get("customers", {})
+    if not customers:
+        return
+
+    print(f"\nMigrating {len(customers)} customers from TOML...")
+    migrated = skipped = 0
+    migration_map.setdefault("customers", {})
+
+    org_name_to_id: dict[str, int] = {}
+
+    for email, cfg in customers.items():
+        if email in migration_map["customers"]:
+            skipped += 1
+            continue
+
+        local = email.split("@")[0]
+        firstname = cfg.get("firstname") or local.capitalize()
+        lastname = cfg.get("lastname") or ""
+        login = cfg.get("login") or local
+
+        payload: dict = {
+            "email": email,
+            "login": login,
+            "firstname": firstname,
+            "lastname": lastname,
+            "roles": ["Customer"],
+            "active": True,
+        }
+
+        # Resolve optional organization by name.
+        org_name = cfg.get("organization")
+        if org_name:
+            if org_name not in org_name_to_id:
+                orgs = api.search("organizations")
+                org_name_to_id = {o["name"]: o["id"] for o in orgs if o.get("name")}
+            org_id = org_name_to_id.get(org_name)
+            if org_id:
+                payload["organization_id"] = org_id
+            else:
+                error_log.warning(f"Customer '{email}': organization '{org_name}' not found — skipping org assignment")
+
+        try:
+            result = api.post("users", payload)
+        except _ZammadAPIError as post_err:
+            # Already exists — find by email.
+            by_email = api.search(f"users/search?query=email:{email}&limit=1")
+            match = next((u for u in by_email if u.get("email") == email), None)
+            if not match:
+                error_log.error(f"Customer '{email}': creation failed ({post_err}) and not found by email")
+                continue
+            result = match
+
+        migration_map["customers"][email] = result["id"]
+        migrated += 1
+
+    print(f"  Customers: {migrated} created, {skipped} skipped")
     _save_migration_map(migration_map, api.dry_run)
 
 
@@ -1142,9 +1213,6 @@ def _migrate_tickets(
     priority_map = toml.get("priorities", {})
     redmine_base_url = toml.get("redmine_url", "").rstrip("/")
 
-    # Find the Zammad state ID for "pending reminder" once — used for the due-date override.
-    # Look it up from migration_map: any redmine_status_<id> entry that resolves to a
-    # pending-reminder Zammad state will have the right ID.  Fall back to a direct name lookup.
     try:
         _all_zammad_states = {s["name"]: s["id"] for s in api.get("ticket_states")}
         pending_reminder_state_id: int | None = _all_zammad_states.get(_StateType.PENDING_REMINDER.value)
@@ -1195,13 +1263,7 @@ def _migrate_tickets(
             continue
         owner_id = migration_map["users"].get(str(issue["assigned_to_id"])) if issue["assigned_to_id"] else None
 
-        state_id = _resolve_state_id(
-            issue["status_id"],
-            issue["is_closed"],
-            issue["due_date"],
-            migration_map,
-            pending_reminder_state_id,
-        )
+        state_id = _resolve_state_id(issue["status_id"], migration_map)
         priority = priority_map.get(issue["priority_name"], _Priority.NORMAL)
 
         created_at = issue["created_on"].isoformat() if issue["created_on"] else None
@@ -1231,19 +1293,26 @@ def _migrate_tickets(
         if updated_at:
             ticket_data["updated_at"] = updated_at
 
-        # Preserve due_date: force pending_reminder state so Zammad accepts pending_time.
+        # pending_time is required when the state is "pending reminder".
+        # Case 1: issue has a due_date → force pending_reminder, use due_date.
+        # Case 2: status mapped to pending_reminder via fallback → use created_on.
         if issue["due_date"] and not issue["is_closed"]:
             if pending_reminder_state_id is None:
-                error_log.warning(
-                    f"Issue {issue['id']}: has due_date but pending_reminder state not found — pending_time lost"
+                # None means the API call to fetch ticket states failed (see above); the
+                # "pending reminder" state exists in every default Zammad installation so
+                # its absence indicates a fetch error, not a missing state.
+                error_log.error(
+                    f"Issue {issue['id']}: has due_date but 'pending reminder' state not found — pending_time lost"
                 )
             else:
                 if state_id != pending_reminder_state_id:
                     error_log.warning(
-                        f"Issue {issue['id']}: overriding state {state_id!r} → pending_reminder to preserve due_date"
+                        f"Issue {issue['id']}: overriding state → 'pending reminder' to preserve due_date"
                     )
                 ticket_data["state_id"] = pending_reminder_state_id
                 ticket_data["pending_time"] = issue["due_date"].isoformat()
+        elif _state_is_fallback(issue["status_id"], migration_map) and created_at:
+            ticket_data["pending_time"] = created_at
 
         tags = tags_by_issue.get(issue["id"], [])
         if tags:
@@ -1754,6 +1823,7 @@ def _run_migration(conn, api: _ZammadAPI, migration_map: dict, toml: dict, error
     _migrate_custom_fields(conn, api, migration_map, error_log, skip_cf_id=tags_cf_id)
     _ensure_redmine_status_field(conn, api, migration_map, error_log)
     _migrate_organizations(api, migration_map, toml, error_log)
+    _migrate_customers(api, migration_map, toml, error_log)
     _migrate_users(conn, api, migration_map, error_log)
     _migrate_group(conn, api, migration_map, toml, error_log)
     _migrate_overviews(conn, api, migration_map, toml, error_log)

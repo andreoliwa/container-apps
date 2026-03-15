@@ -16,9 +16,6 @@ redmine_url = "https://redmine.example.com"
 # "Acme Corp"  = { domain = "acme.com", domain_assignment = true }
 # "Partner Ltd" = {}
 
-# Fallback pending_time when a ticket maps to "pending reminder" but has no due_date.
-pending_time_fallback = "2099-12-31T00:00:00Z"
-
 # Login of the Zammad user to use as customer when a Redmine issue's author has no match.
 # Must be an existing Zammad user (e.g. the admin account created during setup).
 default_customer_login = "admin"
@@ -27,18 +24,26 @@ default_customer_login = "admin"
 # Omit or leave empty to skip tag import from custom fields.
 # tags_custom_field = "Tags"
 
+# Customers to create in Zammad. The key is the email address (used as the unique identifier).
+# All other fields are optional; firstname/lastname/login are derived from the email if omitted.
+[customers]
+# "john@example.com" = { firstname = "John", lastname = "Doe", login = "john", organization = "Acme Corp" }
+# "jane@example.com" = {}
+
 # Map every Redmine status name to a Zammad state type.
-# Valid zammad_type values: "open", "closed", "pending reminder", "pending action"
-# The original Redmine status is stored as a custom field ("Redmine Status") on each ticket.
-# Redmine statuses marked is_closed=true always map to "closed" regardless of this table.
-# If a Redmine issue has a due_date, it maps to "pending reminder" regardless of status.
+# The migration picks the first existing Zammad state whose state_type matches zammad_type.
+# If a status is missing from this table, or its zammad_type has no matching Zammad state,
+# the ticket falls back to "pending reminder" with pending_time = created_on (and a warning).
+# If a Redmine issue has a due_date it always maps to "pending reminder" with pending_time = due_date,
+# regardless of this table.
+# The original Redmine status is always stored as a custom field ("Redmine Status") on each ticket.
 [states]
-"New"        = { zammad_type = "open" }
-"In Progress"= { zammad_type = "open" }
-"Feedback"   = { zammad_type = "pending reminder" }
-"Resolved"   = { zammad_type = "closed" }
-"Closed"     = { zammad_type = "closed" }
-"Rejected"   = { zammad_type = "closed" }
+"New"           = { zammad_type = "new" }
+"In Progress"   = { zammad_type = "open" }
+"Feedback"      = { zammad_type = "pending reminder" }
+"Resolved"      = { zammad_type = "closed" }
+"Closed"        = { zammad_type = "closed" }
+"Rejected"      = { zammad_type = "closed" }
 
 # Map every Redmine priority name to a Zammad priority.
 # Valid zammad_priority values: "1 low", "2 normal", "3 high"
