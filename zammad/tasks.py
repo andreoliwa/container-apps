@@ -861,21 +861,44 @@ def _migrate_users(conn, api: _ZammadAPI, migration_map: dict, error_log: loggin
         redmine_id = str(user["id"])
         login = user["login"] or f"redmine_user_{user['id']}"
         email = user["mail"] or f"redmine_user_{user['id']}@migration.local"
+        fields = _fields(user, login, email)
+        label = f"User {user['id']} ({login})"
 
         if redmine_id in migration_map["users"]:
             zammad_id = migration_map["users"][redmine_id]
             try:
-                api.put(f"users/{zammad_id}", _fields(user, login, email))
+                api.put(f"users/{zammad_id}", fields)
                 updated += 1
             except _ZammadAPIError as e:
-                error_log.error(f"User {user['id']} ({login}) update: {e}")
+                error_log.error(f"{label} update: {e}")
             skipped += 1
             continue
 
-        result = _upsert_zammad_user(
-            api, _fields(user, login, email), ["Agent", "Customer"], error_log, f"User {user['id']} ({login})"
-        )
-        if result is None:
+        # Query first — never POST if the user already exists in Zammad.
+        existing = None
+        if email:
+            by_email = api.search(f"users/search?query=email:{email}&limit=1")
+            existing = next((u for u in by_email if u.get("email") == email), None)
+        if not existing:
+            by_login = api.search(f"users/search?query=login:{login}&limit=1")
+            existing = next((u for u in by_login if u.get("login") == login), None)
+
+        if existing:
+            update = dict(fields)
+            if existing.get("login") != login:
+                del update["login"]
+            try:
+                api.put(f"users/{existing['id']}", update)
+            except _ZammadAPIError as e:
+                error_log.error(f"{label} update after find: {e}")
+            migration_map["users"][redmine_id] = existing["id"]
+            migrated += 1
+            continue
+
+        try:
+            result = api.post("users", {**fields, "roles": ["Agent", "Customer"]})
+        except _ZammadAPIError as e:
+            error_log.error(f"{label}: creation failed: {e}")
             continue
         migration_map["users"][redmine_id] = result["id"]
         migrated += 1
@@ -1316,8 +1339,13 @@ def _migrate_tickets(
                 )
             else:
                 if state_id != pending_reminder_state_id:
+                    issue_url = (
+                        f"{redmine_base_url}/issues/{issue['id']}" if redmine_base_url else f"Issue {issue['id']}"
+                    )
+                    due = issue["due_date"].strftime("%d/%m/%Y")
+                    status = issue["status_name"]
                     error_log.warning(
-                        f"Issue {issue['id']}: overriding state → 'pending reminder' to preserve due_date"
+                        f"{issue_url} status '{status}' → state 'pending reminder' to preserve due date {due}"
                     )
                 ticket_data["state_id"] = pending_reminder_state_id
                 ticket_data["pending_time"] = issue["due_date"].isoformat()
