@@ -9,6 +9,13 @@ import_group = "Redmine Import"
 # so you can navigate back to the original issue. Leave empty to skip.
 redmine_url = "https://redmine.example.com"
 
+# Organizations to create in Zammad. All fields except the name are optional.
+# domain_assignment = true means Zammad will automatically assign users with matching
+# email domains to this organization.
+[organizations]
+# "Acme Corp"  = { domain = "acme.com", domain_assignment = true }
+# "Partner Ltd" = {}
+
 # Fallback pending_time when a ticket maps to "pending reminder" but has no due_date.
 pending_time_fallback = "2099-12-31T00:00:00Z"
 
@@ -22,8 +29,9 @@ default_customer_login = "admin"
 
 # Map every Redmine status name to a Zammad state type.
 # Valid zammad_type values: "open", "closed", "pending reminder", "pending action"
-# The migration will create a matching Zammad ticket state for each entry.
+# The original Redmine status is stored as a custom field ("Redmine Status") on each ticket.
 # Redmine statuses marked is_closed=true always map to "closed" regardless of this table.
+# If a Redmine issue has a due_date, it maps to "pending reminder" regardless of status.
 [states]
 "New"        = { zammad_type = "open" }
 "In Progress"= { zammad_type = "open" }
