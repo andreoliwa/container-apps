@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     import psycopg2.extensions
 
 import tomllib
-from conjuring.grimoire import print_error
+from conjuring.grimoire import ask_yes_no, lazy_env_variable, print_error, print_warning
 from invoke import Context, Exit, task
 
 # --- Constants ---
@@ -79,11 +79,7 @@ def _load_toml() -> dict:
 @task
 def zammad_setup(c: Context) -> None:
     """Set up Zammad: create PostgreSQL 17 database and user."""
-    db_pass = os.environ.get("ZAMMAD_DB_PASSWORD")
-
-    if not db_pass:
-        print_error("ZAMMAD_DB_PASSWORD environment variable is required")
-        raise Exit(code=1)
+    db_pass = lazy_env_variable("ZAMMAD_DB_PASSWORD", "Zammad PostgreSQL password")
 
     print("Step 1: Starting PostgreSQL 17...")
     c.run("cd postgres && docker compose up -d postgres17")
@@ -123,164 +119,128 @@ def zammad_down(c: Context) -> None:
     c.run(f"docker compose {cf} down")
 
 
-@task
-def zammad_wipe(c: Context) -> None:
-    """Delete all data created by the Redmine import (tickets, articles, users, groups, custom fields)."""
+def _psql_delete(sql: str, dry_run: bool) -> None:
+    """Execute a SQL statement via docker exec on postgres17/zammad. No-op in dry-run mode."""
+    import subprocess
+
+    if dry_run:
+        print(f"  [DRY-RUN] {sql}")
+        return
+    result = subprocess.run(
+        ["docker", "exec", "postgres17", "psql", "-U", "postgres", "-d", "zammad", "-c", sql],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        print_error(f"DB error: {result.stderr.strip()}")
+
+
+def _wipe_via_db(migration_map: dict, dry_run: bool) -> None:
+    """Delete all migrated data directly from the Zammad database, in FK-safe order."""
+    # Collect IDs from migration_map for targeted DELETE statements.
+    ticket_ids = list(migration_map.get("tickets", {}).values())
+    # article IDs: stored as values in migration_map["articles"] (includes _first sentinel keys)
+    article_ids = list(migration_map.get("articles", {}).values())
+    # links are stored as {key: True}, no DB IDs — they live in the links table keyed by ticket IDs
+    overview_ids = list(migration_map.get("overviews", {}).values())
+    # users + customers both map to Zammad user IDs
+    user_ids = list(
+        {
+            *migration_map.get("users", {}).values(),
+            *migration_map.get("customers", {}).values(),
+        }
+    )
+    org_ids = list(migration_map.get("organizations", {}).values())
+    group_ids = list(migration_map.get("groups", {}).values())
+    # custom_fields values are dicts {"zammad_name": ..., "id": ...}
+    cf_ids = [v["id"] for v in migration_map.get("custom_fields", {}).values() if isinstance(v, dict) and "id" in v]
+
+    def _ids_sql(ids: list) -> str:
+        return "ARRAY[" + ",".join(str(int(i)) for i in ids) + "]"
+
+    # All SQL strings below use only integer IDs from migration_map.json — noqa: S608 is safe here.
+    if article_ids:
+        print(f"  Deleting {len(article_ids)} articles...")
+        _psql_delete(f"DELETE FROM ticket_articles WHERE id = ANY({_ids_sql(article_ids)});", dry_run)  # noqa: S608
+
+    if ticket_ids:
+        print(f"  Deleting {len(ticket_ids)} tickets (and their dependent rows)...")
+        # Delete FK-dependent rows first, then tickets themselves.
+        _psql_delete(f"DELETE FROM ticket_time_accountings WHERE ticket_id = ANY({_ids_sql(ticket_ids)});", dry_run)  # noqa: S608
+        _psql_delete(f"DELETE FROM mentions WHERE ticket_id = ANY({_ids_sql(ticket_ids)});", dry_run)  # noqa: S608
+        ids = _ids_sql(ticket_ids)
+        _psql_delete(
+            f"DELETE FROM links WHERE link_object_source_value = ANY({ids}) OR link_object_target_value = ANY({ids});",  # noqa: S608
+            dry_run,
+        )
+        _psql_delete(f"DELETE FROM tags WHERE o_id = ANY({_ids_sql(ticket_ids)});", dry_run)  # noqa: S608
+        _psql_delete(f"DELETE FROM activity_streams WHERE o_id = ANY({_ids_sql(ticket_ids)});", dry_run)  # noqa: S608
+        _psql_delete(f"DELETE FROM tickets WHERE id = ANY({_ids_sql(ticket_ids)});", dry_run)  # noqa: S608
+
+    if overview_ids:
+        print(f"  Deleting {len(overview_ids)} overviews...")
+        _psql_delete(f"DELETE FROM overviews WHERE id = ANY({_ids_sql(overview_ids)});", dry_run)  # noqa: S608
+
+    if user_ids:
+        print(f"  Deleting {len(user_ids)} users...")
+        _psql_delete(f"DELETE FROM cti_caller_ids WHERE user_id = ANY({_ids_sql(user_ids)});", dry_run)  # noqa: S608
+        _psql_delete(f"DELETE FROM groups_users WHERE user_id = ANY({_ids_sql(user_ids)});", dry_run)  # noqa: S608
+        _psql_delete(f"DELETE FROM roles_users WHERE user_id = ANY({_ids_sql(user_ids)});", dry_run)  # noqa: S608
+        _psql_delete(f"DELETE FROM organizations_users WHERE user_id = ANY({_ids_sql(user_ids)});", dry_run)  # noqa: S608
+        _psql_delete(f"DELETE FROM users WHERE id = ANY({_ids_sql(user_ids)});", dry_run)  # noqa: S608
+
+    if org_ids:
+        print(f"  Deleting {len(org_ids)} organizations...")
+        _psql_delete(f"DELETE FROM organizations WHERE id = ANY({_ids_sql(org_ids)});", dry_run)  # noqa: S608
+
+    if group_ids:
+        print(f"  Deleting {len(group_ids)} groups...")
+        _psql_delete(f"DELETE FROM groups_macros WHERE group_id = ANY({_ids_sql(group_ids)});", dry_run)  # noqa: S608
+        _psql_delete(f"DELETE FROM groups_text_modules WHERE group_id = ANY({_ids_sql(group_ids)});", dry_run)  # noqa: S608
+        _psql_delete(f"DELETE FROM groups WHERE id = ANY({_ids_sql(group_ids)});", dry_run)  # noqa: S608
+
+    if cf_ids:
+        print(f"  Deleting {len(cf_ids)} custom fields...")
+        _psql_delete(f"DELETE FROM object_manager_attributes WHERE id = ANY({_ids_sql(cf_ids)});", dry_run)  # noqa: S608
+
+    if not dry_run:
+        MAP_FILE.unlink()
+        print("\n✅ migration_map.json deleted.")
+        print("✅ Wipe complete. You can now re-run invoke zammad-migrate.")
+
+
+@task(help={"drop": "Drop the zammad database entirely and return (skips per-entity cleanup)"})
+def zammad_wipe(c: Context, drop: bool = False) -> None:
+    """Delete all data created by the Redmine import directly via the database (fast)."""
+    dry_run: bool = c.config.run.dry
+
+    if drop:
+        if dry_run:
+            print("[DRY-RUN] Would stop Zammad stack and drop database 'zammad' on postgres17.")
+            return
+        if not ask_yes_no(
+            "⚠️ This is a destructive command and cannot be undone.\n"
+            "   The Zammad Docker stack will be stopped (with 'docker compose down')\n"
+            "   and the database will be deleted.\n"
+            "   Are you sure?"
+        ):
+            return
+        zammad_down(c)
+        print("Dropping database 'zammad'...")
+        c.run(f'{_PG17} -c "DROP DATABASE IF EXISTS zammad;"')
+        if MAP_FILE.exists():
+            MAP_FILE.unlink()
+        print("✅ Database dropped.")
+        print("   Run 'invoke zammad-setup' to recreate it, then 'invoke zammad-up'.")
+        return
+
     if not MAP_FILE.exists():
         print("No migration_map.json found — nothing to wipe.")
         return
 
-    zammad_token = os.environ.get("ZAMMAD_TOKEN", "")
-    zammad_url = os.environ.get("ZAMMAD_URL", "http://localhost:8008")
-    if not zammad_token:
-        print_error("ZAMMAD_TOKEN environment variable is required")
-        raise Exit(code=1)
-
     migration_map = _load_migration_map()
-    api = _ZammadAPI(zammad_url, zammad_token, dry_run=c.config.run.dry)
-
-    # Delete in reverse dependency order: tickets → users → organizations → groups → overviews → tags → custom fields
-    total_failed = 0
-    total_failed += _wipe_collection(api, "tickets", "tickets", migration_map, "tickets")
-    total_failed += _wipe_collection(api, "users", "users", migration_map, "users")
-    total_failed += _wipe_collection(api, "customers", "users", migration_map, "customers")
-    total_failed += _wipe_collection(api, "organizations", "organizations", migration_map, "organizations")
-    total_failed += _wipe_collection(api, "groups", "groups", migration_map, "groups")
-    total_failed += _wipe_collection(api, "overviews", "overviews", migration_map, "overviews")
-    total_failed += _wipe_tags(api, migration_map)
-    total_failed += _wipe_collection(api, "custom fields", "object_manager_attributes", migration_map, "custom_fields")
-
-    if not c.config.run.dry:
-        if total_failed:
-            print(f"\n⚠  {total_failed} deletion(s) failed — migration_map.json kept so you can retry.")
-        else:
-            MAP_FILE.unlink()
-            print("\n✅ migration_map.json deleted.")
-            print("✅ Wipe complete. You can now re-run invoke zammad-migrate.")
-
-
-def _clear_zammad_references(model: str, record_id: int) -> None:
-    """Use docker exec + Rails runner to delete all records that reference this object.
-
-    Zammad's Models.references() check prevents API deletion when dependent rows exist
-    (e.g. UserGroup memberships, Cti::CallerId entries) that have no dedicated API endpoints.
-    """
-    import subprocess
-
-    script = (
-        f"refs = Models.references({model}, {record_id}); "
-        "refs.each { |klass_name, cols| "
-        "  klass = klass_name.constantize; "
-        "  cols.each_key { |col| klass.where(col => " + str(record_id) + ").destroy_all } "
-        "}"
-    )
-    subprocess.run(
-        ["docker", "exec", "zammad-railsserver", "bundle", "exec", "rails", "r", script],
-        check=False,
-        capture_output=True,
-    )
-
-
-def _wipe_collection(api: _ZammadAPI, label: str, endpoint_prefix: str, migration_map: dict, map_key: str) -> int:
-    """Delete a list of Zammad entities by ID; remove each from migration_map on success.
-
-    Returns the number of failures so the caller can decide whether to keep the map file.
-    """
-    from tqdm import tqdm
-
-    # Build a reverse lookup: zammad_id → redmine_key, so we can remove entries on success.
-    # custom_fields values are dicts {"zammad_name": ..., "id": ...}; others are plain int IDs.
-    entries: dict = migration_map.get(map_key, {})
-    if map_key == "custom_fields":
-        id_to_key = {v["id"]: k for k, v in entries.items() if isinstance(v, dict) and "id" in v}
-        ids = list(id_to_key)
-    else:
-        id_to_key = {v: k for k, v in entries.items()}
-        ids = list(id_to_key)
-
-    if not ids:
-        print(f"No {label} to wipe.")
-        return 0
-
-    suffix = " (and their articles)" if label == "tickets" else ""
-    deleted = failed = 0
-    for zammad_id in tqdm(ids, desc=f"Deleting {label}{suffix}", unit=label[:-1]):
-        try:
-            api.delete(f"{endpoint_prefix}/{zammad_id}")
-            del migration_map[map_key][id_to_key[zammad_id]]
-            _save_migration_map(migration_map, api.dry_run)
-            deleted += 1
-        except _ZammadAPIError as e:
-            if e.status == HTTPStatus.NOT_FOUND or "Couldn't find" in str(e):
-                # Already gone — treat as success so the map entry is removed and wipe can complete.
-                msg = f"  (i) {label[:-1].capitalize()} {zammad_id} not found (already deleted) — skipping."
-                tqdm.write(_LOG_LEVEL_COLORS[logging.WARNING] + msg + _LOG_COLOR_RESET)
-                del migration_map[map_key][id_to_key[zammad_id]]
-                _save_migration_map(migration_map, api.dry_run)
-                deleted += 1
-            elif "object has references" in str(e) and (
-                rails_model := {"users": "User", "groups": "Group"}.get(map_key)
-            ):
-                # Dependent rows (UserGroup memberships, Cti::CallerId, etc.) block the API
-                # delete but have no dedicated API endpoints — clear them via Rails, then retry.
-                _clear_zammad_references(rails_model, zammad_id)
-                try:
-                    api.delete(f"{endpoint_prefix}/{zammad_id}")
-                    del migration_map[map_key][id_to_key[zammad_id]]
-                    _save_migration_map(migration_map, api.dry_run)
-                    deleted += 1
-                    continue
-                except Exception as e2:
-                    tqdm.write(f"  ⚠ Could not delete {label[:-1]} {zammad_id} after clearing references: {e2}")
-                    failed += 1
-            else:
-                tqdm.write(f"  ⚠ Could not delete {label[:-1]} {zammad_id}: {e}")
-                failed += 1
-        except Exception as e:
-            tqdm.write(f"  ⚠ Could not delete {label[:-1]} {zammad_id}: {e}")
-            failed += 1
-    print(f"  {label.capitalize()}: {deleted} deleted, {failed} failed")
-    return failed
-
-
-def _wipe_tags(api: _ZammadAPI, migration_map: dict) -> int:
-    """Remove all imported tags from their Zammad tickets.
-
-    Returns the number of failures.
-    """
-    from tqdm import tqdm
-
-    entries: dict = migration_map.get("tags", {})
-    if not entries:
-        print("No tags to wipe.")
-        return 0
-
-    deleted = failed = 0
-    for key, zammad_ticket_id in tqdm(list(entries.items()), desc="Deleting tags", unit="tag"):
-        tag_name = key.split(":", 1)[1] if ":" in key else key
-        try:
-            api.post(
-                "tags/remove",
-                {"object": "Ticket", "o_id": zammad_ticket_id, "item": tag_name},
-            )
-            del migration_map["tags"][key]
-            _save_migration_map(migration_map, api.dry_run)
-            deleted += 1
-        except _ZammadAPIError as e:
-            if e.status == HTTPStatus.NOT_FOUND or "Couldn't find" in str(e):
-                msg = f"  (i) Tag '{tag_name}' on ticket {zammad_ticket_id} not found — skipping."
-                tqdm.write(_LOG_LEVEL_COLORS[logging.WARNING] + msg + _LOG_COLOR_RESET)
-                del migration_map["tags"][key]
-                _save_migration_map(migration_map, api.dry_run)
-                deleted += 1
-            else:
-                tqdm.write(f"  ⚠ Could not remove tag '{tag_name}' from ticket {zammad_ticket_id}: {e}")
-                failed += 1
-        except Exception as e:
-            tqdm.write(f"  ⚠ Could not remove tag '{tag_name}' from ticket {zammad_ticket_id}: {e}")
-            failed += 1
-    print(f"  Tags: {deleted} removed, {failed} failed")
-    return failed
+    _wipe_via_db(migration_map, dry_run)
 
 
 @task
@@ -1438,7 +1398,7 @@ def _repair_article_bodies(migration_map: dict, redmine_base_url: str, dry_run: 
         check=False,
     )
     if result.returncode != 0:
-        print(f"  ⚠ DB update failed: {result.stderr.strip()}")
+        print_error(f"  ❌ DB update failed: {result.stderr.strip()}")
     else:
         updated = sum(int(m) for m in re.findall(r"UPDATE (\d+)", result.stdout))
         print(f"  Article bodies: {updated} updated")
@@ -1890,7 +1850,7 @@ def zammad_migrate(
     print("Redmine → Zammad Migration")
     print("=" * 60)
     if dry_run:
-        print("\n⚠  DRY-RUN MODE — no changes will be made\n")
+        print_warning("\n⚠️  DRY-RUN MODE — no changes will be made\n")
 
     error_log, error_counter = _setup_error_logging()
     migration_map = _load_migration_map()
