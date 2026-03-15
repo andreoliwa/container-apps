@@ -143,6 +143,7 @@ def zammad_wipe(c: Context) -> None:
     total_failed += _wipe_collection(api, "users", "users", migration_map, "users")
     total_failed += _wipe_collection(api, "groups", "groups", migration_map, "groups")
     total_failed += _wipe_collection(api, "overviews", "overviews", migration_map, "overviews")
+    total_failed += _wipe_tags(api, migration_map)
     total_failed += _wipe_collection(api, "custom fields", "object_manager_attributes", migration_map, "custom_fields")
 
     if not c.config.run.dry:
@@ -237,6 +238,45 @@ def _wipe_collection(api: _ZammadAPI, label: str, endpoint_prefix: str, migratio
     return failed
 
 
+def _wipe_tags(api: _ZammadAPI, migration_map: dict) -> int:
+    """Remove all imported tags from their Zammad tickets.
+
+    Returns the number of failures.
+    """
+    from tqdm import tqdm
+
+    entries: dict = migration_map.get("tags", {})
+    if not entries:
+        print("No tags to wipe.")
+        return 0
+
+    deleted = failed = 0
+    for key, zammad_ticket_id in tqdm(list(entries.items()), desc="Deleting tags", unit="tag"):
+        tag_name = key.split(":", 1)[1] if ":" in key else key
+        try:
+            api.post(
+                "tags/remove",
+                {"object": "Ticket", "o_id": zammad_ticket_id, "item": tag_name},
+            )
+            del migration_map["tags"][key]
+            _save_migration_map(migration_map, api.dry_run)
+            deleted += 1
+        except _ZammadAPIError as e:
+            if e.status == HTTPStatus.NOT_FOUND or "Couldn't find" in str(e):
+                tqdm.write(f"  (i) Tag '{tag_name}' on ticket {zammad_ticket_id} not found — skipping.")
+                del migration_map["tags"][key]
+                _save_migration_map(migration_map, api.dry_run)
+                deleted += 1
+            else:
+                tqdm.write(f"  ⚠ Could not remove tag '{tag_name}' from ticket {zammad_ticket_id}: {e}")
+                failed += 1
+        except Exception as e:
+            tqdm.write(f"  ⚠ Could not remove tag '{tag_name}' from ticket {zammad_ticket_id}: {e}")
+            failed += 1
+    print(f"  Tags: {deleted} removed, {failed} failed")
+    return failed
+
+
 @task
 def zammad_reindex(c: Context) -> None:
     """Rebuild the Zammad Elasticsearch search index."""
@@ -274,6 +314,7 @@ def _load_migration_map() -> dict:
         "states": {},
         "links": {},
         "overviews": {},
+        "tags": {},
     }
 
 
@@ -1024,7 +1065,10 @@ def _migrate_tickets(
 
         try:
             result = api.post("tickets", ticket_data)
-            migration_map["tickets"][redmine_id] = result["id"]
+            zammad_ticket_id = result["id"]
+            migration_map["tickets"][redmine_id] = zammad_ticket_id
+            for tag in tags:
+                migration_map.setdefault("tags", {})[f"{redmine_id}:{tag}"] = zammad_ticket_id
             migrated += 1
             if migrated % 50 == 0:
                 _save_migration_map(migration_map, api.dry_run)
@@ -1535,6 +1579,7 @@ def zammad_migrate(
     print(f"  Links:         {len(migration_map.get('links', {}))}")
     print(f"  Custom fields: {len(migration_map['custom_fields'])}")
     print(f"  Overviews:     {len(migration_map.get('overviews', {}))}")
+    print(f"  Tags:          {len(migration_map.get('tags', {}))}")
     if error_count:
         print_error(f"  Errors:        {error_count} (see {ERROR_LOG})")
     else:
