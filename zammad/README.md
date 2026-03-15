@@ -49,6 +49,45 @@ invoke zammad-down        # Stop
 - **iCal** — Built-in at `/ical/tickets/...` (per user/group), subscribe in any calendar app
 - **Telegram** — Channels → Telegram: add bot token from BotFather, requires HTTPS
 
+### Setting up Gmail as an email channel
+
+Two options:
+
+**Option A: Plain IMAP with an App Password (simpler)**
+
+Works fine if your Google account has 2FA enabled (required for App Passwords). Go to **Admin → Channels → Email → Add
+Account** and use:
+
+- Incoming: `imap.gmail.com`, port 993, SSL
+- Outgoing: `smtp.gmail.com`, port 587, STARTTLS
+- Username: your full Gmail address
+- Password: an [App Password](https://myaccount.google.com/apppasswords) generated in your Google Account settings (
+  Security → App Passwords)
+
+**Option B: Google OAuth channel (no App Password needed)**
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/), create an OAuth client ID (Web application type).
+2. In Zammad, go to **Admin → Channels → Google → Connect Google App** — it shows the callback URL to add as an
+   Authorized redirect URI in Google.
+3. Paste the Client ID and Client Secret into Zammad and save.
+4. Click **Add Account**, complete Google's consent screen, and configure group assignment.
+
+**Before connecting an inbox with existing emails:**
+
+1. Disable auto-reply triggers first: **Admin → Manage → Triggers** — disable _"auto-reply (on new tickets)"_ and _"
+   auto-reply (on follow-up of tickets)"_. Otherwise, Zammad sends an auto-reply to every imported email, including old
+   ones. Re-enable after the initial import.
+2. During account setup, use the **Experts** dialog to enable **Archive Mode** for emails older than 2 weeks — this
+   prevents old emails from being treated as new tickets.
+3. To keep emails on the server rather than deleting them after import, enable **Keep Messages on Server** in the \*
+   \*Experts\*\* dialog during account setup.
+
+**After connecting the inbox, enable follow-up detection via References:**
+
+Go to **Admin → Channels → Email → Settings → Additional follow-up detection** and enable **References**. This uses
+standard `Message-ID` / `In-Reply-To` email headers to match replies to existing tickets, with no false-positive risk. \*
+\*Body** and **Attachment\*\* options are also available but can cause false detections.
+
 ## Migration from Redmine
 
 Migration is implemented as an invoke task.
@@ -97,6 +136,12 @@ After running the migration, verify the following manually in the Zammad UI:
 - [ ] Tickets are assigned to the correct tracker sub-group (e.g. `Redmine Import::Issue Type`)
 - [ ] Parent/child ticket links are visible on tickets that had a parent issue in Redmine
 - [ ] Search returns results after `invoke zammad-reindex` completes
+- [ ] [Set up Gmail/email integration channel](#setting-up-gmail-as-an-email-channel) and test some use cases:
+    - [ ] Create a ticket via email
+    - [ ] Reply to a ticket via email
+    - [ ] Create another ticket via email and merge it with an existing ticket
+    - [ ] Forward an email to the channel address and verify it creates a new ticket
+    - [ ] Move an existing email to the inbox and verify it appears in Zammad
 
 ## Backup
 
