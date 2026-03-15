@@ -39,8 +39,10 @@ repos:
     hooks:
       - id: mypy
         additional_dependencies:
-          - types-requests
+          - markdown
+          - types-Markdown
           - types-PyYAML
+          - types-requests
   - repo: https://github.com/pappasam/toml-sort
     rev: v0.24.3
     hooks:

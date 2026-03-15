@@ -5,6 +5,10 @@
 # The group is created automatically if it doesn't exist.
 import_group = "Redmine Import"
 
+# Base URL of the Redmine instance. Added as the first line of each imported ticket
+# so you can navigate back to the original issue. Leave empty to skip.
+redmine_url = "https://redmine.example.com"
+
 # Fallback pending_time when a ticket maps to "pending reminder" but has no due_date.
 pending_time_fallback = "2099-12-31T00:00:00Z"
 

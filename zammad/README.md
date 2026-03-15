@@ -89,11 +89,13 @@ After running the migration, verify the following manually in the Zammad UI:
 
 - [ ] Ticket states match the Redmine statuses (Admin → Ticket States)
 - [ ] Ticket priorities are correct (Admin → Ticket Priorities)
-- [ ] Imported group exists and agents are members (Admin → Groups)
+- [ ] Imported group exists with one sub-group per Redmine tracker (Admin → Groups)
 - [ ] Users were imported with correct names and emails (Admin → Users)
 - [ ] Custom fields appear on tickets (Admin → Objects)
 - [ ] A sample of tickets has correct creation dates (requires import mode was active)
 - [ ] Journal notes appear as articles on tickets
+- [ ] Tickets are assigned to the correct tracker sub-group (e.g. `Redmine Import::Issue Type`)
+- [ ] Parent/child ticket links are visible on tickets that had a parent issue in Redmine
 - [ ] Search returns results after `invoke zammad-reindex` completes
 
 ## Backup

@@ -264,7 +264,7 @@ def _import_mode_off(c: Context) -> None:
 def _load_migration_map() -> dict:
     if MAP_FILE.exists():
         return json.loads(MAP_FILE.read_text())
-    return {"users": {}, "groups": {}, "tickets": {}, "articles": {}, "custom_fields": {}, "states": {}}
+    return {"users": {}, "groups": {}, "tickets": {}, "articles": {}, "custom_fields": {}, "states": {}, "links": {}}
 
 
 def _save_migration_map(migration_map: dict, dry_run: bool = False) -> None:
@@ -288,6 +288,22 @@ class _PrintErrorHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         print_error(self.format(record))
+
+
+def _md_to_html(text: str) -> str:
+    import markdown
+
+    return markdown.markdown(text, extensions=["extra", "nl2br", "sane_lists"])
+
+
+def _issue_body(description: str | None, issue_id: int, redmine_base_url: str) -> str:
+    """Return the HTML body for a ticket: optional Redmine link header + converted description."""
+    body = _md_to_html(description or "(no description)")
+    if redmine_base_url:
+        url = f"{redmine_base_url}/issues/{issue_id}"
+        link = f'<p><a href="{url}">{url}</a></p>'
+        body = link + "\n" + body
+    return body
 
 
 def _setup_error_logging() -> tuple[logging.Logger, _CountingHandler]:
@@ -436,18 +452,29 @@ def _read_redmine_custom_fields(conn) -> list:
         return cur.fetchall()
 
 
+def _read_redmine_trackers(conn) -> list:
+    import psycopg2.extras
+
+    with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("SELECT id, name FROM trackers ORDER BY id")
+        return cur.fetchall()
+
+
 def _read_redmine_issues(conn) -> list:
     import psycopg2.extras
 
     with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
         cur.execute("""
             SELECT i.id, i.subject, i.description, i.created_on, i.updated_on,
-                   i.due_date, i.author_id, i.assigned_to_id,
+                   i.due_date, i.author_id, i.assigned_to_id, i.parent_id,
+                   i.tracker_id,
                    s.name AS status_name, s.is_closed,
-                   p.name AS priority_name
+                   p.name AS priority_name,
+                   t.name AS tracker_name
             FROM issues i
             JOIN issue_statuses s ON i.status_id = s.id
             JOIN enumerations p ON i.priority_id = p.id
+            JOIN trackers t ON i.tracker_id = t.id
             ORDER BY i.id
         """)
         return cur.fetchall()
@@ -633,12 +660,24 @@ def _migrate_users(conn, api: _ZammadAPI, migration_map: dict, error_log: loggin
     print(f"\nMigrating {len(users)} users...")
     migrated = skipped = 0
 
+    updated = 0
     for user in users:
         redmine_id = str(user["id"])
+        login = user["login"] or f"redmine_user_{user['id']}"
+        email = user["mail"] or f"redmine_user_{user['id']}@migration.local"
+
         if redmine_id in migration_map["users"]:
+            # User already migrated — update email in case it was missing on the first run.
+            if user["mail"]:
+                zammad_id = migration_map["users"][redmine_id]
+                try:
+                    api.put(f"users/{zammad_id}", {"email": email})
+                    updated += 1
+                except Exception as e:
+                    error_log.error(f"User {user['id']} ({login}) email update: {e}")
             skipped += 1
             continue
-        login = user["login"] or f"redmine_user_{user['id']}"
+
         try:
             result = api.post(
                 "users",
@@ -646,7 +685,7 @@ def _migrate_users(conn, api: _ZammadAPI, migration_map: dict, error_log: loggin
                     "login": login,
                     "firstname": user["firstname"] or "Unknown",
                     "lastname": user["lastname"] or "User",
-                    "email": user["mail"] or f"redmine_user_{user['id']}@migration.local",
+                    "email": email,
                     "active": user["status"] == 1,
                     "roles": ["Agent", "Customer"],
                 },
@@ -665,11 +704,12 @@ def _migrate_users(conn, api: _ZammadAPI, migration_map: dict, error_log: loggin
         migration_map["users"][redmine_id] = result["id"]
         migrated += 1
 
-    print(f"  Users: {migrated} migrated, {skipped} skipped (already done)")
+    update_note = f", {updated} email updates" if updated else ""
+    print(f"  Users: {migrated} migrated, {skipped} skipped{update_note}")
     _save_migration_map(migration_map, api.dry_run)
 
 
-def _migrate_group(api: _ZammadAPI, migration_map: dict, toml: dict, error_log: logging.Logger) -> None:
+def _migrate_group(conn, api: _ZammadAPI, migration_map: dict, toml: dict, error_log: logging.Logger) -> None:
     import_group = toml.get("import_group", "Redmine Import")
 
     if MIGRATION_MAP_GROUP_KEY not in migration_map["groups"]:
@@ -689,18 +729,49 @@ def _migrate_group(api: _ZammadAPI, migration_map: dict, toml: dict, error_log: 
         migration_map["groups"][MIGRATION_MAP_GROUP_KEY] = result["id"]
         _save_migration_map(migration_map, api.dry_run)
 
-    # Ensure every migrated user (including API token user) is a member of the import group.
+    parent_group_id = migration_map["groups"][MIGRATION_MAP_GROUP_KEY]
+
+    # Create one child group per Redmine tracker (issue type), nested under the import group.
+    trackers = _read_redmine_trackers(conn)
+    print(f"  Creating {len(trackers)} tracker groups...")
+    for tracker in trackers:
+        tracker_key = f"tracker_{tracker['id']}"
+        if tracker_key in migration_map["groups"]:
+            continue
+        try:
+            result = api.post("groups", {"name": tracker["name"], "parent_id": parent_group_id, "active": True})
+        except _ZammadAPIError:
+            groups = api.get("groups")
+            full_name = f"{import_group}::{tracker['name']}"
+            match = next((g for g in groups if g["name"] == full_name), None)
+            if not match:
+                error_log.error(f"Tracker group '{tracker['name']}' creation failed and not found by name")
+                continue
+            result = match
+        migration_map["groups"][tracker_key] = result["id"]
+    _save_migration_map(migration_map, api.dry_run)
+
+    # Collect all group IDs users must belong to: parent + all tracker child groups.
+    all_group_ids = [parent_group_id] + [
+        migration_map["groups"][f"tracker_{t['id']}"]
+        for t in trackers
+        if f"tracker_{t['id']}" in migration_map["groups"]
+    ]
+
+    # Ensure every migrated user (including API token user) is a member of all groups.
     # Zammad rejects owner_id or customer_id for users not in the ticket's group.
-    group_id = migration_map["groups"][MIGRATION_MAP_GROUP_KEY]
     user_ids_to_add = list(migration_map["users"].values())
     me = api.get("users/me")
     user_ids_to_add.append(me["id"])
-    print(f"  Ensuring {len(user_ids_to_add)} users are members of '{import_group}'...")
+    print(f"  Ensuring {len(user_ids_to_add)} users are members of {len(all_group_ids)} groups...")
     for uid in user_ids_to_add:
         user = api.get(f"users/{uid}")
-        current_groups = user.get("group_ids", {})
-        if group_id not in current_groups and str(group_id) not in current_groups:
-            api.put(f"users/{uid}", {"group_ids": {**current_groups, group_id: ["full"]}})
+        current_groups = dict(user.get("group_ids", {}))
+        new_entries = {
+            gid: ["full"] for gid in all_group_ids if gid not in current_groups and str(gid) not in current_groups
+        }
+        if new_entries:
+            api.put(f"users/{uid}", {"group_ids": {**current_groups, **new_entries}})
 
 
 def _migrate_custom_fields(
@@ -856,10 +927,29 @@ def _migrate_tickets(
     state_map = toml.get("states", {})
     priority_map = toml.get("priorities", {})
     pending_fallback = toml.get("pending_time_fallback", "2099-12-31T00:00:00Z")
+    redmine_base_url = toml.get("redmine_url", "").rstrip("/")
 
+    repaired = 0
     for issue in tqdm(issues, desc="Migrating tickets", unit="ticket"):
         redmine_id = str(issue["id"])
+
+        custom_values = _read_redmine_custom_values(conn, issue["id"])
+        custom_fields_data: dict = {}
+        for cv in custom_values:
+            if tags_cf_id is not None and cv["name"].lower() == tags_cf_name.lower():
+                continue  # Already included via tags_by_issue as native Zammad tags
+            custom_fields_data[_sanitize_field_name(cv["name"])] = cv["value"]
+
         if redmine_id in migration_map["tickets"]:
+            # Ticket already migrated — repair custom field values in case they were dropped
+            # (e.g. if the ticket was created before execute_migrations ran and activated fields).
+            if custom_fields_data:
+                zammad_id = migration_map["tickets"][redmine_id]
+                try:
+                    api.put(f"tickets/{zammad_id}", custom_fields_data)
+                    repaired += 1
+                except Exception as e:
+                    error_log.error(f"Issue {issue['id']} repair custom fields: {e}")
             skipped += 1
             continue
 
@@ -873,16 +963,18 @@ def _migrate_tickets(
         created_at = issue["created_on"].isoformat() if issue["created_on"] else None
         updated_at = issue["updated_on"].isoformat() if issue["updated_on"] else None
 
+        tracker_group_id = migration_map["groups"].get(f"tracker_{issue['tracker_id']}", group_id)
         ticket_data = {
             "title": issue["subject"],
-            "group_id": group_id,
+            "group_id": tracker_group_id,
             "customer_id": customer_id,
             "owner_id": owner_id,
             "state": state_name,
             "priority": priority,
             "article": {
                 "subject": issue["subject"],
-                "body": issue["description"] or "(no description)",
+                "body": _issue_body(issue["description"], issue["id"], redmine_base_url),
+                "content_type": "text/html",
                 "type": "note",
                 "internal": False,
             },
@@ -902,11 +994,7 @@ def _migrate_tickets(
         if tags:
             ticket_data["tags"] = ",".join(tags)
 
-        custom_values = _read_redmine_custom_values(conn, issue["id"])
-        for cv in custom_values:
-            if tags_cf_id is not None and cv["name"].lower() == tags_cf_name.lower():
-                continue  # Already included via tags_by_issue as native Zammad tags
-            ticket_data[_sanitize_field_name(cv["name"])] = cv["value"]
+        ticket_data.update(custom_fields_data)
 
         try:
             result = api.post("tickets", ticket_data)
@@ -917,7 +1005,8 @@ def _migrate_tickets(
         except Exception as e:
             error_log.error(f"Issue {issue['id']} ({issue['subject'][:50]}): {e}")
 
-    print(f"  Tickets: {migrated} migrated, {skipped} skipped")
+    repair_note = f", {repaired} custom-field repairs" if repaired else ""
+    print(f"  Tickets: {migrated} migrated, {skipped} skipped{repair_note}")
     _save_migration_map(migration_map, api.dry_run)
 
 
@@ -942,7 +1031,8 @@ def _migrate_articles(conn, api: _ZammadAPI, migration_map: dict, error_log: log
 
             article_data: dict = {
                 "ticket_id": zammad_ticket_id,
-                "body": journal["notes"],
+                "body": _md_to_html(journal["notes"]),
+                "content_type": "text/html",
                 "type": "note",
                 "internal": False,
             }
@@ -957,6 +1047,83 @@ def _migrate_articles(conn, api: _ZammadAPI, migration_map: dict, error_log: log
                 error_log.error(f"Journal {journal['id']} on issue {redmine_issue_id}: {e}")
 
     print(f"  Articles: {migrated} migrated, {skipped} skipped")
+    _save_migration_map(migration_map, api.dry_run)
+
+
+def _migrate_links(conn, api: _ZammadAPI, migration_map: dict, error_log: logging.Logger) -> None:
+    """Create parent/child links in Zammad for Redmine issues that have a parent_id."""
+    import psycopg2.extras
+    from tqdm import tqdm
+
+    with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("""
+            SELECT id, parent_id FROM issues
+            WHERE parent_id IS NOT NULL
+            ORDER BY id
+        """)
+        parent_rows = cur.fetchall()
+
+    if not parent_rows:
+        return
+
+    # Only process pairs where both sides were successfully migrated.
+    pairs = [
+        (row["id"], row["parent_id"])
+        for row in parent_rows
+        if str(row["id"]) in migration_map["tickets"] and str(row["parent_id"]) in migration_map["tickets"]
+    ]
+    if not pairs:
+        print("\nNo parent/child links to migrate (no matching ticket pairs in map).")
+        return
+
+    print(f"\nMigrating {len(pairs)} parent/child links...")
+
+    # Bulk-fetch Zammad ticket numbers for all involved ticket IDs (one request per 100 IDs).
+    # The links/add API requires the source ticket's display number, not its internal ID.
+    zammad_ids_needed = {migration_map["tickets"][str(child)] for child, _ in pairs} | {
+        migration_map["tickets"][str(parent)] for _, parent in pairs
+    }
+    id_to_number: dict[int, str] = {}
+    for zammad_id in zammad_ids_needed:
+        try:
+            t = api.get(f"tickets/{zammad_id}")
+            id_to_number[zammad_id] = t["number"]
+        except Exception as e:
+            error_log.error(f"Could not fetch ticket number for Zammad ticket {zammad_id}: {e}")
+
+    migrated = skipped = 0
+    for redmine_child_id, redmine_parent_id in tqdm(pairs, desc="Migrating links", unit="link"):
+        link_key = f"{redmine_child_id}_{redmine_parent_id}"
+        if link_key in migration_map.get("links", {}):
+            skipped += 1
+            continue
+
+        zammad_parent_id = migration_map["tickets"][str(redmine_parent_id)]
+        zammad_child_id = migration_map["tickets"][str(redmine_child_id)]
+        parent_number = id_to_number.get(zammad_parent_id)
+        if not parent_number:
+            error_log.error(f"Issue {redmine_child_id}: parent ticket number not available, skipping link.")
+            continue
+
+        try:
+            api.post(
+                "links/add",
+                {
+                    "link_type": "parent",
+                    "link_object_source": "Ticket",
+                    "link_object_source_number": parent_number,
+                    "link_object_target": "Ticket",
+                    "link_object_target_value": zammad_child_id,
+                },
+            )
+            migration_map.setdefault("links", {})[link_key] = True
+            migrated += 1
+            if migrated % 50 == 0:
+                _save_migration_map(migration_map, api.dry_run)
+        except Exception as e:
+            error_log.error(f"Issue {redmine_child_id} → parent {redmine_parent_id}: {e}")
+
+    print(f"  Links: {migrated} migrated, {skipped} skipped")
     _save_migration_map(migration_map, api.dry_run)
 
 
@@ -979,11 +1146,12 @@ def _run_migration(conn, api: _ZammadAPI, migration_map: dict, toml: dict, error
     _migrate_states(conn, api, migration_map, toml, error_log)
     _migrate_custom_fields(conn, api, migration_map, error_log, skip_cf_id=tags_cf_id)
     _migrate_users(conn, api, migration_map, error_log)
-    _migrate_group(api, migration_map, toml, error_log)
+    _migrate_group(conn, api, migration_map, toml, error_log)
     _migrate_tickets(
         conn, api, migration_map, toml, tags_by_issue, error_log, tags_cf_id=tags_cf_id, tags_cf_name=tags_cf_name
     )
     _migrate_articles(conn, api, migration_map, error_log)
+    _migrate_links(conn, api, migration_map, error_log)
 
 
 # --- Migration task ---
@@ -1070,6 +1238,7 @@ def zammad_migrate(
     print(f"  Groups:        {len(migration_map['groups'])}")
     print(f"  Tickets:       {len(migration_map['tickets'])}")
     print(f"  Articles:      {len(migration_map['articles'])}")
+    print(f"  Links:         {len(migration_map.get('links', {}))}")
     print(f"  Custom fields: {len(migration_map['custom_fields'])}")
     if error_count:
         print_error(f"  Errors:        {error_count} (see {ERROR_LOG})")
