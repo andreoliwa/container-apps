@@ -255,7 +255,7 @@ def zammad_wipe(c: Context, drop: bool = False) -> None:
 
     if drop:
         if dry_run:
-            print("[DRY-RUN] Would stop Zammad stack and drop database 'zammad' on postgres17.")
+            print("[DRY-RUN] Would stop Zammad stack and drop database and role 'zammad' on postgres17.")
             return
         if not ask_yes_no(
             "⚠️ This is a destructive command and cannot be undone.\n"
@@ -265,11 +265,12 @@ def zammad_wipe(c: Context, drop: bool = False) -> None:
         ):
             return
         zammad_down(c)
-        print("Dropping database 'zammad'...")
+        print("Dropping database and role 'zammad'...")
         c.run(f'{_PG17} -c "DROP DATABASE IF EXISTS zammad;"')
+        c.run(f'{_PG17} -c "DROP ROLE IF EXISTS zammad;"')
         if MAP_FILE.exists():
             MAP_FILE.unlink()
-        print("✅ Database dropped.")
+        print("✅ Database and role dropped.")
         print("   Run 'invoke zammad-setup' to recreate it, then 'invoke zammad-up'.")
         return
 
