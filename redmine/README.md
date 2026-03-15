@@ -5,6 +5,30 @@
     - Docs: https://github.com/docker-library/docs/tree/master/redmine
 - GitHub: https://github.com/redmine/redmine
 
+## Email Configuration
+
+### Outgoing email (SMTP)
+
+Configured in `configuration.yml` under `default.email_delivery`. The current setup uses Gmail SMTP with STARTTLS on port 587. Fill in `user_name` and `password` (use a Gmail App Password if 2FA is enabled).
+
+### Incoming email (IMAP polling)
+
+Email receiving is implemented as a Rails initializer (`check_email.rb`) using `rufus-scheduler`. It polls Gmail IMAP every minute inside the Rails process — no separate cron job or container needed. It reuses the SMTP credentials (`user_name`/`password`) from `configuration.yml` for the IMAP connection, plus the `imap_project` key at the top of `configuration.yml` to route emails to the correct Redmine project.
+
+The `check_email.rb` initializer is baked into the Docker image via the `Dockerfile` (`COPY ./check_email.rb config/initializers/check_email.rb`). `rufus-scheduler` is also added to the bundle in the `Dockerfile`.
+
+**To disable incoming email**, remove `check_email.rb` from `config/initializers/` and rebuild the image:
+
+```bash
+# In redmine/Dockerfile, remove or comment out:
+# COPY ./check_email.rb config/initializers/check_email.rb
+
+docker compose build
+docker compose up -d
+```
+
+Alternatively, leave the file in place but set `imap_project` to a blank/invalid value in `configuration.yml` — IMAP will still connect but emails won't be routed anywhere.
+
 # Setup
 
 1. Copy `configuration.sample.yml` to `configuration.yml` and fill in the variables.
