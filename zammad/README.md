@@ -28,9 +28,10 @@ invoke zammad-up
 ## Usage
 
 ```bash
-invoke zammad-up          # Start and follow logs
-invoke zammad-up --pull   # Pull latest images first
-invoke zammad-down        # Stop
+invoke zammad-up              # Start and follow logs
+invoke zammad-up --pull       # Pull latest images first
+invoke zammad-down            # Stop
+invoke zammad-fetch-emails    # Force immediate email fetch from all channels
 ```
 
 ## Architecture
@@ -46,7 +47,7 @@ invoke zammad-down        # Stop
 ## Integrations (configured via Zammad Admin UI)
 
 - **Email** — Channels → Email: add IMAP/SMTP channels for Gmail or Fastmail
-- **iCal** — Built-in at `/ical/tickets/...` (per user/group), subscribe in any calendar app
+- **iCal** — Built-in calendar feed (see [Subscribing to the iCal feed](#subscribing-to-the-ical-feed) below)
 - **Telegram** — Channels → Telegram: add bot token from BotFather, requires HTTPS
 
 ### Setting up Gmail as an email channel
@@ -87,6 +88,15 @@ Account** and use:
 Go to **Admin → Channels → Email → Settings → Additional follow-up detection** and enable **References**. This uses
 standard `Message-ID` / `In-Reply-To` email headers to match replies to existing tickets, with no false-positive risk. \*
 \*Body** and **Attachment\*\* options are also available but can cause false detections.
+
+### Subscribing to the iCal feed
+
+Zammad provides a built-in iCal feed that shows pending-reminder tickets as calendar events at their `pending_time`.
+To find your personal iCal URL: **Avatar (bottom-left) → Profile → Calendar**. Copy the URL and subscribe to it in any
+calendar app.
+
+The feed includes tickets in the new, pending, and escalation categories. It is not configurable — there is no way to
+filter by specific state or custom criteria.
 
 ## Migration from Redmine
 

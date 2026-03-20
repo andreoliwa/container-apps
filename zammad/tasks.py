@@ -292,6 +292,14 @@ def zammad_reindex(c: Context) -> None:
     print("✅ Reindex complete. Search results may take a few minutes to reflect all tickets.")
 
 
+@task
+def zammad_fetch_emails(c: Context) -> None:
+    """Force Zammad to fetch emails from all configured channels immediately."""
+    print("Fetching emails from all configured channels...")
+    c.run(f'{_RAILS} rails r "Channel.fetch"')
+    print("✅ Email fetch complete.")
+
+
 def _import_mode_on(c: Context) -> None:
     print("Enabling import mode (backdates timestamps, suppresses notifications)...")
     c.run(f"{_RAILS} rails r \"Setting.set('import_mode', true)\"")

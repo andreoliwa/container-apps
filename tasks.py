@@ -10,6 +10,7 @@ from invoke import Context, Exit, task
 from postgres.tasks import db_connect, db_dump, db_list, db_restore  # noqa: F401
 from zammad.tasks import (  # noqa: F401
     zammad_down,
+    zammad_fetch_emails,
     zammad_migrate,
     zammad_reindex,
     zammad_setup,
