@@ -141,6 +141,10 @@ services:
     command: ["zammad-nginx"]
     environment:
       <<: *shared-env
+      # Required when behind a reverse proxy (Caddy) that terminates TLS.
+      # Without this, nginx overwrites X-Forwarded-Proto with "http", Rails
+      # silently drops the Secure session cookie, and CSRF verification fails.
+      NGINX_SERVER_SCHEME: https
     ports:
       - "127.0.0.1:8008:8080"
     volumes:
