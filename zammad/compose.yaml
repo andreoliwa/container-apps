@@ -149,6 +149,11 @@ services:
       - "127.0.0.1:8008:8080"
     volumes:
       - zammad-storage:/opt/zammad/storage
+      # Custom nginx template: adds /ical location with sub_filter to rewrite
+      # CLASS:PRIVATE → CLASS:PUBLIC, so Google Calendar shows event details
+      # instead of "Busy". Mounted over the template source so the entrypoint's
+      # sed substitutions (port, scheme, server_name) still apply at startup.
+      - ./nginx-zammad.conf:/opt/zammad/contrib/nginx/zammad.conf:ro
     networks:
       - postgres17
       - redis

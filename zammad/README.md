@@ -95,8 +95,32 @@ Zammad provides a built-in iCal feed that shows pending-reminder tickets as cale
 To find your personal iCal URL: **Avatar (bottom-left) → Profile → Calendar**. Copy the URL and subscribe to it in any
 calendar app.
 
+Available feeds:
+
+| Feed              | URL path                                           |
+| ----------------- | -------------------------------------------------- |
+| All tickets       | `https://zammad.example.com/ical/tickets`          |
+| Pending reminders | `https://zammad.example.com/ical/tickets/pending`  |
+| New & open        | `https://zammad.example.com/ical/tickets/new_open` |
+
 The feed includes tickets in the new, pending, and escalation categories. It is not configurable — there is no way to
 filter by specific state or custom criteria.
+
+**Google Calendar compatibility:** Two workarounds are needed for Google Calendar:
+
+1. **Auth bypass:** Google Calendar cannot do HTTP Basic Auth, so the iCal endpoints must be publicly accessible. The
+   Caddy reverse proxy injects a Zammad API token on `/ical/*` requests via `header_up Authorization`, bypassing both
+   the auth gateway and Zammad's Basic Auth. To set this up, create an API token in Zammad (**Admin → API Token**) and
+   configure the Caddyfile (see the Caddy config on the server).
+
+2. **Cache busting:** Google Calendar caches iCal feeds aggressively (12-24h) and there is no manual refresh. If you
+   change the feed configuration and need Google to re-fetch immediately, remove the subscription and re-add it with a
+   dummy query parameter (e.g. `?v=2`). Google treats it as a new URL, bypassing the cache.
+
+3. **CLASS:PRIVATE rewrite:** Zammad hardcodes `CLASS:PRIVATE` on all iCal events. Google Calendar hides details for
+   private events on subscribed calendars, showing only "Busy". A custom nginx template (`nginx-zammad.conf`) adds a
+   `/ical` location with `sub_filter` to rewrite `CLASS:PRIVATE` → `CLASS:PUBLIC`. This file is mounted over
+   `contrib/nginx/zammad.conf` so the entrypoint's sed substitutions still apply.
 
 ## Migration from Redmine
 
