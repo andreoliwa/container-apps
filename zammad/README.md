@@ -41,6 +41,18 @@ invoke zammad-fetch-emails    # Force immediate email fetch from all channels
 - **zammad-nginx** — Nginx reverse proxy (port 8008)
 - **zammad-scheduler** — Background job processor (Sidekiq)
 - **zammad-websocket** — WebSocket server for real-time updates
+
+### Email polling frequency
+
+The scheduler polls all inbound email channels (IMAP) every **30 seconds** — this is a hardcoded `Scheduler` DB record set during `zammad-init`, not a config file or env var. It is not configurable via the Admin UI. To verify the current interval:
+
+```bash
+docker exec zammad-railsserver bundle exec rails r \
+  'puts Scheduler.all.map { |s| "#{s.period}s | #{s.name}" }.sort.join("\n")'
+```
+
+The relevant entry is `Check channels. (30s)`. Changing it requires a direct DB update and would be reset on the next `zammad-init` run (e.g. during upgrades). Use `invoke zammad-fetch-emails` for a one-off immediate fetch.
+
 - **zammad-elasticsearch** — Full-text search (Elasticsearch 8)
 - **zammad-memcached** — Response caching
 

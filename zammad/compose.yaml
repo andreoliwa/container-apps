@@ -113,7 +113,9 @@ services:
       zammad-init:
         condition: service_completed_successfully
     cpus: "0.3"
-    mem_limit: "256m"
+    # Increased from 256m: at 256m the container was OOM-killed repeatedly,
+    # causing background jobs (email fetch, notifications) to fail silently.
+    mem_limit: "512m"
 
   zammad-websocket:
     image: ghcr.io/zammad/zammad:7.0.0-0021
@@ -132,7 +134,10 @@ services:
       zammad-init:
         condition: service_completed_successfully
     cpus: "0.2"
-    mem_limit: "128m"
+    # Increased from 128m: at 128m the container hit 99%+ RAM and was OOM-killed
+    # every few minutes, dropping all WebSocket connections and causing the
+    # "Lost network connection!" banner in the browser.
+    mem_limit: "384m"
 
   zammad-nginx:
     image: ghcr.io/zammad/zammad:7.0.0-0021
