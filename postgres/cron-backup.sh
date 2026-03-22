@@ -6,8 +6,8 @@
 
 # $HOME doesn't work in crontab, so we need to set it manually
 HOME_DIR=$(dirname "$(dirname "$(dirname "$(realpath "$0")")")")
-BACKUP_DIR="$HOME_DIR/OneDrive/Backup/$(hostname)/postgres14"
-mkdir -p "$BACKUP_DIR"
+PG_BACKUP_DIR="$HOME_DIR/OneDrive/Backup/$(hostname)/postgres14"
+mkdir -p "$PG_BACKUP_DIR"
 
 DATABASE=$1
 if [ -z "$DATABASE" ]; then
@@ -17,17 +17,16 @@ fi
 echo "Database name: $DATABASE"
 
 echo "Remove empty backups"
-find "$BACKUP_DIR" -type f -size 0 -print -delete
+find "$PG_BACKUP_DIR" -type f -size 0 -print -delete
 
-# TODO find another way of deleting old backups per database instead of mixing all of them
-# echo "Delete old backups"
-# find "$BACKUP_DIR" -type f ! -size 0 | sort -ur | tail -n+11 | xargs rm 2> /dev/null
+echo "Delete old backups for $DATABASE (keep 30)"
+ls -t "$PG_BACKUP_DIR/${DATABASE}_"*.sql.gz 2>/dev/null | tail -n +31 | xargs rm -f
 
 set -e
 # This file has the environment variables needed to connect to the database
 # shellcheck source=/dev/null
 source "$HOME_DIR/.config/dotfiles/local.env"
-OUTPUT_SQL_FILE="${BACKUP_DIR}/${DATABASE}_$(date "+%Y-%m-%d-%H-%M-%S").sql"
+OUTPUT_SQL_FILE="${PG_BACKUP_DIR}/${DATABASE}_$(date "+%Y-%m-%d-%H-%M-%S").sql"
 echo "Dumping the database to ${OUTPUT_SQL_FILE}..."
 COMMAND="$(which docker) compose \
     -f $HOME_DIR/container-apps/postgres/compose.yaml \
@@ -39,4 +38,4 @@ echo "Compressing the backup file..."
 gzip "$OUTPUT_SQL_FILE"
 echo "Backup compressed to ${OUTPUT_SQL_FILE}.gz"
 
-ls -lhtr "${BACKUP_DIR}"
+ls -lhtr "${PG_BACKUP_DIR}"
