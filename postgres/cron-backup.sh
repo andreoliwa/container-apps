@@ -25,7 +25,8 @@ ls -t "$PG_BACKUP_DIR/${DATABASE}_"*.sql.gz 2>/dev/null | tail -n +31 | xargs rm
 set -e
 # This file has the environment variables needed to connect to the database
 # shellcheck source=/dev/null
-source "$HOME_DIR/.config/dotfiles/local.env"
+# TODO: fragile way of loading env vars in cron; this should be more robust and not a shell script
+source "$HOME_DIR/.config/shell.d/01-env-container-apps-my-den.sh"
 OUTPUT_SQL_FILE="${PG_BACKUP_DIR}/${DATABASE}_$(date "+%Y-%m-%d-%H-%M-%S").sql"
 echo "Dumping the database to ${OUTPUT_SQL_FILE}..."
 COMMAND="$(which docker) compose \
