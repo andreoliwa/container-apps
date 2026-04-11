@@ -9,6 +9,7 @@ from conjuring.grimoire import print_error
 from invoke import Context, Exit, task
 from postgres.tasks import db_connect, db_dump, db_list, db_restore  # noqa: F401
 from zammad.tasks import (  # noqa: F401
+    zammad_copy_email_settings,
     zammad_down,
     zammad_fetch_emails,
     zammad_migrate,

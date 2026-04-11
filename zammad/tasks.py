@@ -300,6 +300,115 @@ def zammad_fetch_emails(c: Context) -> None:
     print("✅ Email fetch complete.")
 
 
+def _zammad_db_connect(db_pass: str = "") -> psycopg2.extensions.connection:
+    """Return a psycopg2 connection to the Zammad database on postgres17."""
+    import psycopg2
+
+    if not db_pass:
+        db_pass = os.environ.get("ZAMMAD_DB_PASSWORD", os.environ.get("POSTGRES_PASSWORD", ""))
+    return psycopg2.connect(host="localhost", port=5433, dbname="zammad", user="zammad", password=db_pass)
+
+
+def _search_zammad_users(conn, term: str) -> list[dict]:
+    """Return users whose login, email, or full name contains *term* (case-insensitive)."""
+    import psycopg2.extras
+
+    with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute(
+            """
+            SELECT id, login, email, firstname, lastname, preferences
+            FROM users
+            WHERE login ILIKE %s
+               OR email ILIKE %s
+               OR (firstname || ' ' || lastname) ILIKE %s
+            ORDER BY id
+            """,
+            (f"%{term}%", f"%{term}%", f"%{term}%"),
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+
+@task(
+    help={
+        "from_user": "Partial name, email or login — must match exactly one user",
+        "to_users": "Partial name, email or login — may match multiple users",
+        "db_pass": "Zammad DB password (or ZAMMAD_DB_PASSWORD / POSTGRES_PASSWORD env var)",
+    }
+)
+def zammad_copy_email_settings(
+    _c: Context,
+    from_user: str = "",
+    to_users: str = "",
+    db_pass: str = "",
+) -> None:
+    """Copy email notification settings from one Zammad user to one or more others.
+
+    Reads notification_config from the --from user's preferences and writes it into
+    the preferences of every user matched by --to, directly in the Zammad PostgreSQL DB.
+    """
+    import yaml
+
+    if not from_user or not to_users:
+        print_error("Both --from-user and --to-users are required.")
+        raise Exit(code=1)
+
+    conn = _zammad_db_connect(db_pass)
+    try:
+        # --- resolve source user (must be exactly one) ---
+        sources = _search_zammad_users(conn, from_user)
+        if len(sources) == 0:
+            print_error(f"--from-user '{from_user}': no users matched.")
+            raise Exit(code=1)
+        if len(sources) > 1:
+            print_error(f"--from-user '{from_user}': matched {len(sources)} users (must match exactly one):")
+            for u in sources:
+                print_error(
+                    f"  id={u['id']}  login={u['login']}  email={u['email']}  name={u['firstname']} {u['lastname']}"
+                )
+            raise Exit(code=1)
+
+        source = sources[0]
+        src_prefs = yaml.safe_load(source["preferences"] or "") or {}
+        notification_config = src_prefs.get("notification_config")
+        if not notification_config:
+            print_error(f"--from-user '{source['login']}' (id={source['id']}) has no notification_config — aborting.")
+            raise Exit(code=1)
+
+        print(
+            f"Source user: {source['firstname']} {source['lastname']}  login={source['login']}  email={source['email']}"
+        )
+        print("\nEmail notification settings to copy:")
+        print(yaml.dump({"notification_config": notification_config}, default_flow_style=False).rstrip())
+
+        # --- resolve target users (one or more) ---
+        targets = _search_zammad_users(conn, to_users)
+        if not targets:
+            print_error(f"--to-users '{to_users}': no users matched.")
+            raise Exit(code=1)
+
+        print(f"\nTarget users ({len(targets)} matched):")
+        for u in targets:
+            print(f"  id={u['id']}  login={u['login']}  email={u['email']}  name={u['firstname']} {u['lastname']}")
+
+        # --- apply notification_config to each target ---
+        updated = 0
+        with conn.cursor() as cur:
+            for target in targets:
+                tgt_prefs = yaml.safe_load(target["preferences"] or "") or {}
+                tgt_prefs["notification_config"] = notification_config
+                new_prefs = yaml.dump(tgt_prefs, default_flow_style=False)
+                cur.execute(
+                    "UPDATE users SET preferences = %s, updated_at = NOW() WHERE id = %s",
+                    (new_prefs, target["id"]),
+                )
+                updated += 1
+
+        conn.commit()
+        print(f"\n✅ notification_config copied to {updated} user(s).")
+    finally:
+        conn.close()
+
+
 def _import_mode_on(c: Context) -> None:
     print("Enabling import mode (backdates timestamps, suppresses notifications)...")
     c.run(f"{_RAILS} rails r \"Setting.set('import_mode', true)\"")
