@@ -53,6 +53,8 @@ docker exec zammad-railsserver bundle exec rails r \
 
 The relevant entry is `Check channels. (30s)`. Changing it requires a direct DB update and would be reset on the next `zammad-init` run (e.g. during upgrades). Use `invoke zammad-fetch-emails` for a one-off immediate fetch.
 
+30s polling is not a meaningful resource concern: IMAP polling is IO-bound (open TCP connection, issue `IDLE`/`STATUS`, close). CPU usage is negligible. The real resource consumers in this stack are Elasticsearch and the Rails server, both already tuned with memory limits in `compose.yaml`.
+
 - **zammad-elasticsearch** — Full-text search (Elasticsearch 8)
 - **zammad-memcached** — Response caching
 
