@@ -6,6 +6,11 @@ import time
 from pathlib import Path
 
 from conjuring.grimoire import print_error
+from immich.tasks import (  # noqa: F401
+    immich_down,
+    immich_setup,
+    immich_up,
+)
 from invoke import Context, Exit, task
 from postgres.tasks import db_connect, db_dump, db_list, db_restore  # noqa: F401
 from zammad.tasks import (  # noqa: F401

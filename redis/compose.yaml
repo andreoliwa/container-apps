@@ -1,5 +1,10 @@
 # Shared Redis instance for container-apps services
 # Mirrors the postgres/ pattern: named volume, named network, consumers declare external
+#
+# DB index allocation (Redis supports 16 DBs, 0–15):
+#   DB 0 — zammad  (REDIS_URL: redis://redis:6379/0)
+#   DB 1 — immich  (REDIS_HOSTNAME=redis, REDIS_DBINDEX=1)
+# When adding a new service, claim the next free DB index here.
 volumes:
   redis:
     driver: local

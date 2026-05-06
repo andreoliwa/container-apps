@@ -1,0 +1,102 @@
+# Immich - Self-hosted photo and video management
+# https://immich.app/docs/install/docker-compose
+#
+# Uses shared redis (DB index 1) but bundles its own Postgres 14 instance because
+# Immich requires pgvectors + VectorChord extensions that are not available in the
+# shared postgres:17.2 image and no PG17 variant of the immich postgres image exists.
+
+networks:
+  redis:
+    external: true
+    name: redis
+
+volumes:
+  immich-thumbs:
+  immich-db:
+  immich-model-cache:
+
+services:
+  immich-server:
+    image: ghcr.io/immich-app/immich-server:release
+    container_name: immich-server
+    restart: unless-stopped
+    volumes:
+      - ${CONTAINER_APPS_DATA_DIR}/immich/library:/usr/src/app/upload
+      # Thumbnails and encoded video are regeneratable — named volume, not backed up.
+      - immich-thumbs:/usr/src/app/upload/thumbs
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      DB_HOSTNAME: immich-db
+      DB_PORT: "5432"
+      DB_USERNAME: immich
+      DB_PASSWORD: ${IMMICH_DB_PASSWORD}
+      DB_DATABASE_NAME: immich
+      IMMICH_MACHINE_LEARNING_URL: http://immich-machine-learning:3003
+      # DB index 1; zammad occupies index 0.
+      REDIS_HOSTNAME: redis
+      REDIS_PORT: "6379"
+      REDIS_DBINDEX: "1"
+    ports:
+      - "127.0.0.1:2283:2283"
+    networks:
+      - default
+      - redis
+    depends_on:
+      immich-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:2283/api/server/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    cpus: "0.5"
+    # Raised from 512m — Node.js heap + microservices worker OOM at 512m.
+    mem_limit: "1g"
+
+  immich-machine-learning:
+    image: ghcr.io/immich-app/immich-machine-learning:release
+    container_name: immich-machine-learning
+    restart: unless-stopped
+    volumes:
+      # Models are large downloads; cache persists across container recreates.
+      - immich-model-cache:/cache
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python3",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:3003/ping')",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    cpus: "0.5"
+    # ML models (CLIP, OCR, face detection) load into memory; 1g minimum.
+    mem_limit: "1g"
+
+  immich-db:
+    # Immich requires pgvectors and VectorChord extensions not in stock Postgres.
+    # Pinned to PG14 because no PG17 variant of this image is published.
+    image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0
+    container_name: immich-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: immich
+      POSTGRES_PASSWORD: ${IMMICH_DB_PASSWORD}
+      POSTGRES_DB: immich
+      # Required by the immich postgres image for data integrity checks.
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    volumes:
+      - immich-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U immich -d immich"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    cpus: "0.5"
+    mem_limit: "512m"
+    shm_size: "128m"
