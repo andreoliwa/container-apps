@@ -36,8 +36,7 @@ copies the dump into the backup volume if needed, drops and recreates the databa
 and streams the restore — no manual steps required.
 
 ```bash
-cd ~/container-apps
-invoke db-restore --file ~/redmine_2026-03-15-20-45-26.sql.gz \
+ca postgres restore --file ~/redmine_2026-03-15-20-45-26.sql.gz \
     --database redmine_migration --role redmine --version 17
 ```
 

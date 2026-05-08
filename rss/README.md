@@ -22,7 +22,8 @@ Reddit, and more — and lets me rank by **my keywords**, not social popularity.
 
 - **Tiny Tiny RSS (TTRSS)** — Core reader with **filters, scoring, labels**, plugins, and a responsive UI.
     - Uses official maintained images from [tt-rss/tt-rss](https://github.com/tt-rss/tt-rss) (GitHub Container Registry)
-- **[RSSHub](https://github.com/DIYgod/RSSHub) + Redis** — Feed generator for non-RSS sources; enormous route catalog, good caching.
+- **[RSSHub](https://github.com/DIYgod/RSSHub) + Redis** — Feed generator for non-RSS sources; enormous route catalog,
+  good caching.
     - `rsshub-internal`: The actual RSSHub service (port 1200)
     - `rsshub`: Nginx proxy on port 80 (works around TT-RSS port stripping bug)
     - Browse routes: [RSSHub Documentation](https://docs.rsshub.app/)
@@ -59,7 +60,8 @@ Reddit, and more — and lets me rank by **my keywords**, not social popularity.
         ```bash
         pipx install invoke
         ```
-    - Follow the quick setup of [andreoliwa/conjuring](https://github.com/andreoliwa/conjuring#quick-setup) to use `invoke fork.sync` in dev mode
+    - Follow the quick setup of [andreoliwa/conjuring](https://github.com/andreoliwa/conjuring#quick-setup) to use
+      `invoke fork.sync` in dev mode
 
 3. **Environment variables** must be set (add to your shell profile):
 
@@ -98,8 +100,7 @@ Reddit, and more — and lets me rank by **my keywords**, not social popularity.
 1. **Run the database setup**:
 
     ```bash
-    cd ~/container-apps
-    invoke rss-setup --database
+    ca rss setup --database
     ```
 
     This will:
@@ -124,14 +125,17 @@ Reddit, and more — and lets me rank by **my keywords**, not social popularity.
     1. Direct access (for browsing routes): http://localhost:8006/
     2. In TT-RSS feeds, use: `http://rsshub/...` (no port needed, proxy handles it)
     3. Browse available routes at [RSSHub Documentation](https://docs.rsshub.app/)
-    4. Install [RSSHub Radar](https://github.com/DIYgod/RSSHub-Radar) browser extension to easily discover and subscribe to feeds
+    4. Install [RSSHub Radar](https://github.com/DIYgod/RSSHub-Radar) browser extension to easily discover and subscribe
+       to feeds
 
 ## Usage Modes
 
 This setup supports two modes of operation:
 
-1. **Normal Mode (Production)**: Uses official Docker images from GitHub Container Registry. Ideal for production use and distribution.
-2. **Dev Mode (Local Development)**: Builds from a local TT-RSS clone, allowing source code modifications and plugin development.
+1. **Normal Mode (Production)**: Uses official Docker images from GitHub Container Registry. Ideal for production use
+   and distribution.
+2. **Dev Mode (Local Development)**: Builds from a local TT-RSS clone, allowing source code modifications and plugin
+   development.
 
 ### Normal Mode (Production)
 
@@ -260,8 +264,10 @@ The `vf_scored` plugin should already be cloned at `${TTRSS_REPO_DIR}/plugins.lo
 
 ### Configured Plugins
 
-- [vf_scored](https://github.com/andreoliwa/tt-rss-plugin-vf-scored) - Custom keyword-based scoring plugin (available in dev mode, installable in normal mode via `invoke rss-setup --plugin`)
-- [ttrss-af-notifications](https://github.com/supahgreg/ttrss-af-notifications) - Adds a filter action to receive JavaScript-based notifications
+- [vf_scored](https://github.com/andreoliwa/tt-rss-plugin-vf-scored) - Custom keyword-based scoring plugin (available in
+  dev mode, installable in normal mode via `invoke rss-setup --plugin`)
+- [ttrss-af-notifications](https://github.com/supahgreg/ttrss-af-notifications) - Adds a filter action to receive
+  JavaScript-based notifications
 
 ## Running Locally
 
@@ -302,8 +308,7 @@ See the [Usage Modes](#usage-modes) section above for detailed instructions on s
     - Follow the dump instructions in [the PostgreSQL container](../postgres/README.md):
 
     ```bash
-    cd ~/container-apps
-    invoke db-dump ttrss --version 17
+    ca postgres dump ttrss --version 17
     ```
 
     - The list of recent dump files with timestamps will be displayed.
@@ -337,7 +342,7 @@ See the [Usage Modes](#usage-modes) section above for detailed instructions on s
         2. Connect to the container and drop/recreate the database if it already has tables.
         3. Restore:
         ```bash
-        invoke db-connect ttrss --version 17 --psql --command="\i /path/to/dump.sql"
+        ca postgres connect ttrss --version 17 --psql --command="\i /path/to/dump.sql"
         # or directly via docker exec:
         docker exec -i postgres17 psql -U postgres ttrss < /path/to/dump.sql
         ```

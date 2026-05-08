@@ -25,7 +25,7 @@ def _backup_dir() -> Path:
         "command": "Run a SQL command (only works with psql, ignored on pgcli)",
     }
 )
-def db_connect(
+def connect(
     c: Context,
     database: str = "postgres",
     version: int = POSTGRES_VERSION,
@@ -57,7 +57,7 @@ def db_connect(
         "version": f"PostgreSQL version (default: {POSTGRES_VERSION})",
     }
 )
-def db_list(c: Context, version: int = POSTGRES_VERSION) -> None:
+def ls(c: Context, version: int = POSTGRES_VERSION) -> None:
     """List databases using psql."""
     db_user = DB_USER
     command = (
@@ -79,7 +79,7 @@ def db_list(c: Context, version: int = POSTGRES_VERSION) -> None:
         "output_dir": "Output directory for the dump file (default: $BACKUP_DIR/<hostname>/postgres<version>)",
     }
 )
-def db_dump(c: Context, database: str, version: int = POSTGRES_VERSION, output_dir: str = "") -> None:
+def dump(c: Context, database: str, version: int = POSTGRES_VERSION, output_dir: str = "") -> None:
     """Dump a single database (with date/time on the file name)."""
     datetime_str = datetime.now(UTC).isoformat().replace(":", "-").split(".")[0]
 
@@ -105,7 +105,7 @@ def db_dump(c: Context, database: str, version: int = POSTGRES_VERSION, output_d
         "version": f"PostgreSQL version (default: {POSTGRES_VERSION})",
     }
 )
-def db_restore(
+def restore(
     c: Context,
     file: str,
     database: str,
@@ -119,7 +119,7 @@ def db_restore(
     $BACKUP_DIR it will be copied there so the container can reach it.
 
     Example:
-        inv db-restore --file ~/redmine_2026-03-15-20-45-26.sql.gz \
+        ca postgres restore --file ~/redmine_2026-03-15-20-45-26.sql.gz \
             --database redmine_migration --role redmine --version 17
 
     """

@@ -44,16 +44,21 @@ invoke zammad-fetch-emails    # Force immediate email fetch from all channels
 
 ### Email polling frequency
 
-The scheduler polls all inbound email channels (IMAP) every **30 seconds** — this is a hardcoded `Scheduler` DB record set during `zammad-init`, not a config file or env var. It is not configurable via the Admin UI. To verify the current interval:
+The scheduler polls all inbound email channels (IMAP) every **30 seconds** — this is a hardcoded `Scheduler` DB record
+set during `zammad-init`, not a config file or env var. It is not configurable via the Admin UI. To verify the current
+interval:
 
 ```bash
 docker exec zammad-railsserver bundle exec rails r \
   'puts Scheduler.all.map { |s| "#{s.period}s | #{s.name}" }.sort.join("\n")'
 ```
 
-The relevant entry is `Check channels. (30s)`. Changing it requires a direct DB update and would be reset on the next `zammad-init` run (e.g. during upgrades). Use `invoke zammad-fetch-emails` for a one-off immediate fetch.
+The relevant entry is `Check channels. (30s)`. Changing it requires a direct DB update and would be reset on the next
+`zammad-init` run (e.g. during upgrades). Use `invoke zammad-fetch-emails` for a one-off immediate fetch.
 
-30s polling is not a meaningful resource concern: IMAP polling is IO-bound (open TCP connection, issue `IDLE`/`STATUS`, close). CPU usage is negligible. The real resource consumers in this stack are Elasticsearch and the Rails server, both already tuned with memory limits in `compose.yaml`.
+30s polling is not a meaningful resource concern: IMAP polling is IO-bound (open TCP connection, issue `IDLE`/`STATUS`,
+close). CPU usage is negligible. The real resource consumers in this stack are Elasticsearch and the Rails server, both
+already tuned with memory limits in `compose.yaml`.
 
 - **zammad-elasticsearch** — Full-text search (Elasticsearch 8)
 - **zammad-memcached** — Response caching
@@ -100,7 +105,8 @@ Account** and use:
 **After connecting the inbox, enable follow-up detection via References:**
 
 Go to **Admin → Channels → Email → Settings → Additional follow-up detection** and enable **References**. This uses
-standard `Message-ID` / `In-Reply-To` email headers to match replies to existing tickets, with no false-positive risk. \*
+standard `Message-ID` / `In-Reply-To` email headers to match replies to existing tickets, with no false-positive
+risk. \*
 \*Body** and **Attachment\*\* options are also available but can cause false detections.
 
 ### Subscribing to the iCal feed
@@ -215,10 +221,10 @@ button in the UI. The only way to correct a note is via a direct database update
 
 ```bash
 # Find the article
-invoke db-connect zammad --version 17 --psql --command="SELECT id, body FROM ticket_articles WHERE ticket_id = <TICKET_ID> ORDER BY id;"
+ca postgres connect zammad --version 17 --psql --command="SELECT id, body FROM ticket_articles WHERE ticket_id = <TICKET_ID> ORDER BY id;"
 
 # Update it
-invoke db-connect zammad --version 17 --psql --command="UPDATE ticket_articles SET body = '<corrected text>' WHERE id = <ARTICLE_ID>;"
+ca postgres connect zammad --version 17 --psql --command="UPDATE ticket_articles SET body = '<corrected text>' WHERE id = <ARTICLE_ID>;"
 ```
 
 ### Search delay after migration

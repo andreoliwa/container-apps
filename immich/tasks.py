@@ -45,7 +45,9 @@ def immich_setup(c: Context) -> None:
 
 @task(help={"pull": "Pull latest Immich image before starting"})
 def immich_up(c: Context, pull: bool = False) -> None:
-    """Start the Immich stack (requires redis running; immich-db starts automatically)."""
+    """Start Redis, then the Immich stack (immich-db starts automatically)."""
+    c.run("ca redis up")
+
     cf = _compose_file(c)
 
     if pull:
@@ -54,12 +56,10 @@ def immich_up(c: Context, pull: bool = False) -> None:
 
     print("Starting Immich stack...")
     c.run(f"docker compose {cf} up -d")
-    c.run(f"docker compose {cf} logs -f")
+    c.run(f"docker compose {cf} logs -f", warn=True, pty=True)
 
 
 @task
-def immich_down(c: Context) -> None:
-    """Stop the Immich stack."""
-    cf = _compose_file(c)
-    print("Stopping Immich stack...")
-    c.run(f"docker compose {cf} down")
+def browse(c: Context) -> None:
+    """Browse Immich library."""
+    c.run("open http://localhost:2283")
