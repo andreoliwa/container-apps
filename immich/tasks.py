@@ -88,6 +88,25 @@ def immich_dump(c: Context, output_dir: str = "") -> None:
     c.run(f"ls -lrth {output_path!s} | tail -n 20", dry=False)
 
 
+@task(help={"output_dir": "Destination directory (default: $BACKUP_DIR/<hostname>/immich/library)"})
+def immich_rsync(c: Context, output_dir: str = "") -> None:
+    """Rsync Immich library media to the backup directory."""
+    src = (
+        Path(lazy_env_variable("CONTAINER_APPS_DATA_DIR", "Container apps data directory")).expanduser()
+        / "immich"
+        / "library"
+    )
+
+    if output_dir:
+        dest = Path(output_dir).expanduser()
+    else:
+        host_name = socket.gethostname().replace(".local", "")
+        dest = Path(lazy_env_variable("BACKUP_DIR", "Backup directory")).expanduser() / host_name / "immich" / "library"
+
+    dest.mkdir(parents=True, exist_ok=True)
+    c.run(f"rsync -av --progress {src}/ {dest}/")
+
+
 @task
 def browse(c: Context) -> None:
     """Browse Immich library."""
