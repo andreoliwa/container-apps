@@ -4,7 +4,7 @@ import os
 import platform
 from pathlib import Path
 
-from conjuring.grimoire import print_error, print_normal
+from conjuring.grimoire import lazy_env_variable, print_error, print_normal
 from invoke import Context, Exit, task
 
 _CONTAINER_APPS_DIR = os.environ.get("CONTAINER_APPS_DIR", "~/container-apps")
@@ -74,19 +74,9 @@ def rss_setup(c: Context, database: bool = False, plugin: bool = False) -> None:
 def _setup_database(c: Context) -> None:
     db_name = os.environ.get("TTRSS_DB_NAME", "ttrss")
     db_user = os.environ.get("TTRSS_DB_USER", "ttrss")
-    db_pass = os.environ.get("TTRSS_DB_PASS")
-    data_dir = os.environ.get("CONTAINER_APPS_DATA_DIR")
-
-    if not db_pass:
-        print_error("TTRSS_DB_PASS environment variable is required")
-        raise Exit(code=1)
-
-    if not data_dir:
-        print_error("CONTAINER_APPS_DATA_DIR environment variable is required")
-        raise Exit(code=1)
-
+    db_pass = lazy_env_variable("TTRSS_DB_PASS", "TT-RSS database password")
     dry = _dry(c)
-    data_dir_path = Path(data_dir).expanduser()
+    data_dir_path = Path(lazy_env_variable("CONTAINER_APPS_DATA_DIR", "Container apps data directory")).expanduser()
 
     print_normal("Step 1: Starting PostgreSQL 17...", dry=dry)
     c.run("cd postgres && docker compose up -d postgres17")
@@ -161,15 +151,12 @@ def _install_plugin(c: Context) -> None:
 )
 def rss_up(c: Context, pull: bool = False, dev: bool = False) -> None:
     """Start the TT-RSS stack."""
-    ttrss_repo_dir = os.environ.get("TTRSS_REPO_DIR")
     dry = _dry(c)
     cf = _compose_flags(dev)
 
     if pull:
         if dev:
-            if not ttrss_repo_dir:
-                print_error("TTRSS_REPO_DIR environment variable is required for dev mode")
-                raise Exit(code=1)
+            ttrss_repo_dir = lazy_env_variable("TTRSS_REPO_DIR", "TT-RSS local repository directory")
 
             print_normal("Dev mode: Syncing fork, pulling, and building...", dry=dry)
             if platform.system() != "Darwin":

@@ -1,11 +1,10 @@
 """Invoke tasks for Grav CMS."""
 
-import os
 import time
 from pathlib import Path
 
-from conjuring.grimoire import print_error, print_normal
-from invoke import Context, Exit, task
+from conjuring.grimoire import lazy_env_variable, print_normal
+from invoke import Context, task
 
 
 def _dry(c: Context) -> bool:
@@ -15,14 +14,8 @@ def _dry(c: Context) -> bool:
 @task
 def grav_setup(c: Context) -> None:
     """Set up Grav CMS: create data directory, start container, install themes and plugins."""
-    data_dir = os.environ.get("CONTAINER_APPS_DATA_DIR")
-
-    if not data_dir:
-        print_error("CONTAINER_APPS_DATA_DIR environment variable is required")
-        raise Exit(code=1)
-
     dry = _dry(c)
-    data_dir_path = Path(data_dir).expanduser()
+    data_dir_path = Path(lazy_env_variable("CONTAINER_APPS_DATA_DIR", "Container apps data directory")).expanduser()
 
     print_normal("Step 1: Creating data directory...", dry=dry)
     grav_dir = data_dir_path / "grav"

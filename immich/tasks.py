@@ -5,8 +5,8 @@ import socket
 from datetime import UTC, datetime
 from pathlib import Path
 
-from conjuring.grimoire import lazy_env_variable, print_error
-from invoke import Context, Exit, task
+from conjuring.grimoire import lazy_env_variable
+from invoke import Context, task
 
 IMMICH_CONTAINER = "immich-db"
 IMMICH_DB_USER = "immich"
@@ -30,16 +30,15 @@ def immich_setup(c: Context) -> None:
     # Validate required env var before starting anything — fail fast.
     lazy_env_variable("IMMICH_DB_PASSWORD", "Immich PostgreSQL password")
 
-    data_dir = os.environ.get("CONTAINER_APPS_DATA_DIR")
-    if not data_dir:
-        print_error("CONTAINER_APPS_DATA_DIR environment variable is required")
-        raise Exit(code=1)
-
     print("Step 1: Ensuring redis is running...")
     c.run("cd ~/container-apps/redis && docker compose up -d")
 
     print("\nStep 2: Creating library data directory...")
-    library_dir = Path(data_dir).expanduser() / "immich" / "library"
+    library_dir = (
+        Path(lazy_env_variable("CONTAINER_APPS_DATA_DIR", "Container apps data directory")).expanduser()
+        / "immich"
+        / "library"
+    )
     library_dir.mkdir(parents=True, exist_ok=True)
     print(f"  Created: {library_dir}")
 

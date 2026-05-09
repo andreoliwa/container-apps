@@ -1,6 +1,5 @@
 """Invoke tasks for PostgreSQL database management."""
 
-import os
 import socket
 from datetime import UTC, datetime
 from pathlib import Path
@@ -34,7 +33,7 @@ def connect(
 ) -> None:
     """Connect to the containerised PostgreSQL database using pgcli."""
     db_user = DB_USER
-    db_password = os.environ[POSTGRES_ENV.upper()]
+    db_password = lazy_env_variable(POSTGRES_ENV.upper(), "PostgreSQL password")
     if psql:
         if command:
             run_command(
@@ -156,7 +155,7 @@ def restore(
         c.run(f"cp {dump_path} {dest}")
         container_dump_path = f"/var/backups/{dump_path.name}"
     else:
-        # Already inside ~/OneDrive/Backup — compute relative path inside /var/backups/
+        # Already inside $BACKUP_DIR — compute relative path inside /var/backups/
         relative = dump_path.relative_to(backup_volume)
         container_dump_path = f"/var/backups/{relative}"
 
