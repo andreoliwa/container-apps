@@ -1,10 +1,16 @@
 """Invoke tasks for Immich photo and video management."""
 
 import os
+import socket
+from datetime import UTC, datetime
 from pathlib import Path
 
 from conjuring.grimoire import lazy_env_variable, print_error
 from invoke import Context, Exit, task
+
+IMMICH_CONTAINER = "immich-db"
+IMMICH_DB_USER = "immich"
+IMMICH_DB_NAME = "immich"
 
 IMMICH_DIR = Path(__file__).parent
 
@@ -57,6 +63,24 @@ def immich_up(c: Context, pull: bool = False) -> None:
     print("Starting Immich stack...")
     c.run(f"docker compose {cf} up -d")
     c.run(f"docker compose {cf} logs -f", warn=True, pty=True)
+
+
+@task(help={"output_dir": "Output directory (default: $BACKUP_DIR/<hostname>/immich)"})
+def immich_dump(c: Context, output_dir: str = "") -> None:
+    """Dump the Immich database with a timestamp in the file name."""
+    datetime_str = datetime.now(UTC).isoformat().replace(":", "-").split(".")[0]
+
+    if output_dir:
+        output_path = Path(output_dir).expanduser()
+    else:
+        host_name = socket.gethostname().replace(".local", "")
+        output_path = Path(lazy_env_variable("BACKUP_DIR", "Backup directory")).expanduser() / host_name / "immich"
+
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    full_dump_path = output_path / f"{IMMICH_DB_NAME}_{datetime_str}.sql"
+    c.run(f"docker exec {IMMICH_CONTAINER} pg_dump -U {IMMICH_DB_USER} {IMMICH_DB_NAME} > {full_dump_path}")
+    c.run(f"ls -lrth {output_path!s} | tail -n 20", dry=False)
 
 
 @task
