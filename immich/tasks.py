@@ -2,6 +2,7 @@
 
 import os
 import socket
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -77,8 +78,13 @@ def immich_dump(c: Context, output_dir: str = "") -> None:
 
     output_path.mkdir(parents=True, exist_ok=True)
 
-    full_dump_path = output_path / f"{IMMICH_DB_NAME}_{datetime_str}.sql"
-    c.run(f"docker exec {IMMICH_CONTAINER} pg_dump -U {IMMICH_DB_USER} {IMMICH_DB_NAME} > {full_dump_path}")
+    filename = f"{IMMICH_DB_NAME}_{datetime_str}.sql"
+    final_archive = output_path / f"{filename}.tar.gz"
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_sql = Path(tmp_dir) / filename
+        c.run(f"docker exec {IMMICH_CONTAINER} pg_dump -U {IMMICH_DB_USER} {IMMICH_DB_NAME} > {tmp_sql}")
+        c.run(f"tar -czf {final_archive} -C {tmp_dir} {filename}")
     c.run(f"ls -lrth {output_path!s} | tail -n 20", dry=False)
 
 
