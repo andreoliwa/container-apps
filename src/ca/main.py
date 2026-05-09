@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typer
 
-app = typer.Typer(no_args_is_help=True, rich_markup_mode=None)
+app = typer.Typer(no_args_is_help=True, rich_markup_mode=None, pretty_exceptions_enable=False)
 _dry_run: bool = False
 
 

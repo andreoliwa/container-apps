@@ -9,7 +9,7 @@ from conjuring.grimoire import ask_yes_no, lazy_env_variable, print_error, run_c
 from invoke import Context, Exit, task
 
 DB_USER = "postgres"
-POSTGRES_VERSION = 14
+POSTGRES_VERSION = 17
 POSTGRES_ENV = "POSTGRES_PASSWORD"
 
 
@@ -36,20 +36,22 @@ def connect(
     db_user = DB_USER
     db_password = os.environ[POSTGRES_ENV.upper()]
     if psql:
-        tty_flag = "" if command else " -it"
-        run_command(
-            c,
-            f"docker exec{tty_flag} postgres{version} psql -U {db_user} --csv --tuples-only",
-            f'--command="{command}"' if command else "",
-            database,
-        )
+        if command:
+            run_command(
+                c,
+                f"docker exec postgres{version} psql -U {db_user} --csv --tuples-only",
+                f'--command="{command}"',
+                database,
+            )
+        else:
+            run_command(c, f"docker exec -it postgres{version} psql -U {db_user}", database, interactive=True)
     else:
         if command:
             print_error(f"Use --psql to run this command: {command}")
             raise Exit(code=1)
 
         port = f"77{version}"
-        c.run(f"pgcli postgresql://{db_user}:{db_password}@localhost:{port}/{database}")
+        run_command(c, f"pgcli postgresql://{db_user}:{db_password}@localhost:{port}/{database}", interactive=True)
 
 
 @task(

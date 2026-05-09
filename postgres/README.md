@@ -5,8 +5,7 @@
 To dump a database on the backup dir, with date/time on the file name:
 
 ```bash
-cd ~/container-apps
-invoke --dry db-dump [database_name]
+ca --dry postgres dump [database_name]
 ```
 
 ## Restore a single database
