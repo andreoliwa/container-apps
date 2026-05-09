@@ -6,7 +6,7 @@
 
 # $HOME doesn't work in crontab, so we need to set it manually
 HOME_DIR=$(dirname "$(dirname "$(dirname "$(realpath "$0")")")")
-PG_BACKUP_DIR="$HOME_DIR/OneDrive/Backup/$(hostname)/postgres14"
+PG_BACKUP_DIR="${BACKUP_DIR:-$HOME_DIR/OneDrive/Backup}/$(hostname)/postgres14"
 mkdir -p "$PG_BACKUP_DIR"
 
 DATABASE=$1

@@ -47,7 +47,7 @@ services:
     # Use a separate volume that is persisted even if the container is deleted
     volumes:
       - postgres14:/var/lib/postgresql/data
-      - ~/OneDrive/Backup:/var/backups/
+      - ${BACKUP_DIR}:/var/backups/
     networks:
       - postgres14
     # Keep PG from starving the box; it’s not the bottleneck here.
@@ -87,7 +87,7 @@ services:
     # Use a separate volume that is persisted even if the container is deleted
     volumes:
       - postgres17:/var/lib/postgresql/data
-      - ~/OneDrive/Backup:/var/backups/
+      - ${BACKUP_DIR}:/var/backups/
     networks:
       - postgres17
     # Keep PG from starving the box; it's not the bottleneck here.
