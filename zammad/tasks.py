@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     import psycopg2.extensions
 
 import tomllib
+
 from conjuring.grimoire import ask_yes_no, lazy_env_variable, print_error, print_warning
 from invoke import Context, Exit, task
 
