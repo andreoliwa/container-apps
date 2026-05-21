@@ -1,12 +1,11 @@
 """Invoke tasks for Immich photo and video management."""
 
 import os
-import socket
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
-from conjuring.grimoire import lazy_env_variable
+from conjuring.grimoire import get_hostname, lazy_env_variable
 from invoke import Context, task
 
 IMMICH_CONTAINER = "immich-db"
@@ -73,7 +72,7 @@ def immich_dump(c: Context, output_dir: str = "") -> None:
     if output_dir:
         output_path = Path(output_dir).expanduser()
     else:
-        host_name = socket.gethostname().replace(".local", "")
+        host_name = get_hostname()
         output_path = Path(lazy_env_variable("BACKUP_DIR", "Backup directory")).expanduser() / host_name / "immich"
 
     output_path.mkdir(parents=True, exist_ok=True)
@@ -100,7 +99,7 @@ def immich_rsync(c: Context, output_dir: str = "") -> None:
     if output_dir:
         dest = Path(output_dir).expanduser()
     else:
-        host_name = socket.gethostname().replace(".local", "")
+        host_name = get_hostname()
         dest = Path(lazy_env_variable("BACKUP_DIR", "Backup directory")).expanduser() / host_name / "immich" / "library"
 
     dest.mkdir(parents=True, exist_ok=True)
