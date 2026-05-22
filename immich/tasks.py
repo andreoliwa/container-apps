@@ -106,6 +106,83 @@ def immich_rsync(c: Context, output_dir: str = "") -> None:
     c.run(f"rsync -av --progress {src}/ {dest}/")
 
 
+@task(
+    help={
+        "host": "Hostname whose backup to restore from (required, e.g. FX777YD7FHMac)",
+        "input_dir": "Directory containing .sql.tar.gz dumps (default: $BACKUP_DIR/<host>/immich)",
+    },
+)
+def immich_restore(c: Context, host: str = "", input_dir: str = "") -> None:
+    """Restore the Immich database from the latest dump.
+
+    Checks whether the DB already exists and prompts before dropping it.
+    Idempotent: safe to re-run.
+    """
+    import sys
+
+    if not host:
+        print("ERROR: --host is required (e.g. ca immich restore --host FX777YD7FHMac)")
+        sys.exit(1)
+
+    if input_dir:
+        dump_path = Path(input_dir).expanduser()
+    else:
+        backup_dir = Path(lazy_env_variable("BACKUP_DIR", "Backup directory")).expanduser()
+        dump_path = backup_dir / host / "immich"
+
+    archives = sorted(dump_path.glob("*.sql.tar.gz"), reverse=True)
+    if not archives:
+        print(f"ERROR: no .sql.tar.gz files found in {dump_path}")
+        sys.exit(1)
+
+    latest = archives[0]
+    print(f"  dump  {latest}")
+
+    # Check if DB already exists
+    result = c.run(
+        f"docker exec {IMMICH_CONTAINER} psql -U {IMMICH_DB_USER} -lqt",
+        warn=True,
+        hide=True,
+    )
+    db_exists = result.ok and IMMICH_DB_NAME in result.stdout
+
+    if db_exists:
+        answer = input(f"  Database '{IMMICH_DB_NAME}' exists - drop and restore? [y/n/q] ").strip().lower()
+        if answer == "q":
+            print("  quit")
+            sys.exit(0)
+        if answer != "y":
+            print("  skip  restore cancelled")
+            return
+        # Terminate all connections first (values are module-level constants, not user input)
+        terminate_sql = (
+            f"SELECT pg_terminate_backend(pid) FROM pg_stat_activity"  # noqa: S608
+            f" WHERE datname='{IMMICH_DB_NAME}' AND pid <> pg_backend_pid();"
+        )
+        c.run(f'docker exec {IMMICH_CONTAINER} psql -U {IMMICH_DB_USER} postgres -c "{terminate_sql}"')
+        c.run(
+            f"docker exec {IMMICH_CONTAINER} psql -U {IMMICH_DB_USER} postgres"
+            f" -c 'DROP DATABASE IF EXISTS {IMMICH_DB_NAME};'"
+        )
+        c.run(
+            f"docker exec {IMMICH_CONTAINER} psql -U {IMMICH_DB_USER} postgres"
+            f" -c 'CREATE DATABASE {IMMICH_DB_NAME} OWNER {IMMICH_DB_USER};'"
+        )
+        print(f"  drop  {IMMICH_DB_NAME}")
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        c.run(f"tar -xzf {latest} -C {tmp_dir}")
+        sql_files = sorted(Path(tmp_dir).glob("*.sql"), reverse=True)
+        if not sql_files:
+            print(f"ERROR: no .sql file found inside {latest.name}")
+            sys.exit(1)
+        sql = sql_files[0]
+        print(f"  sql   {sql.name}")
+        c.run(f"docker exec -i {IMMICH_CONTAINER} psql -U {IMMICH_DB_USER} {IMMICH_DB_NAME} < {sql}")
+
+    print(f"  done  {IMMICH_DB_NAME} restored from {latest.name}")
+
+
 @task
 def browse(c: Context) -> None:
     """Browse Immich library."""
