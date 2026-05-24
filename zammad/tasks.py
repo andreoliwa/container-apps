@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from enum import Enum
+from enum import StrEnum
 from http import HTTPStatus
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     import psycopg2.extensions
 
 import tomllib
+
 from conjuring.grimoire import ask_yes_no, lazy_env_variable, print_error, print_warning
 from invoke import Context, Exit, task
 
@@ -39,7 +40,7 @@ _REDMINE_STATUS_CF_KEY = "__redmine_status__"
 _REDMINE_STATUS_CF_NAME = "redmine_status"
 
 
-class _StateType(str, Enum):
+class _StateType(StrEnum):
     """Zammad built-in ticket state types. Inherits str so members compare/format as plain strings."""
 
     OPEN = "open"
@@ -48,7 +49,7 @@ class _StateType(str, Enum):
     PENDING_ACTION = "pending action"
 
 
-class _Priority(str, Enum):
+class _Priority(StrEnum):
     """Zammad built-in ticket priorities. Inherits str so members compare/format as plain strings."""
 
     LOW = "1 low"
@@ -60,7 +61,7 @@ PENDING_STATE_TYPES = {_StateType.PENDING_REMINDER.value, _StateType.PENDING_ACT
 
 
 def _compose_file(_c: Context) -> str:
-    container_apps_dir = os.environ.get("CONTAINER_APPS_DIR", "~/container-apps")
+    container_apps_dir = os.environ.get("CONTAINER_APPS_DIR", "~/dev/me/container-apps")
     return f"-f {Path(container_apps_dir).expanduser()}/zammad/compose.yaml"
 
 
