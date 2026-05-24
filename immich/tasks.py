@@ -16,7 +16,7 @@ IMMICH_DIR = Path(__file__).parent
 
 
 def _compose_file(_c: Context) -> str:
-    container_apps_dir = os.environ.get("CONTAINER_APPS_DIR", "~/container-apps")
+    container_apps_dir = os.environ.get("CONTAINER_APPS_DIR", "~/dev/me/container-apps")
     return f"-f {Path(container_apps_dir).expanduser()}/immich/compose.yaml"
 
 
@@ -31,7 +31,7 @@ def immich_setup(c: Context) -> None:
     lazy_env_variable("IMMICH_DB_PASSWORD", "Immich PostgreSQL password")
 
     print("Step 1: Ensuring redis is running...")
-    c.run("cd ~/container-apps/redis && docker compose up -d")
+    c.run("cd ~/dev/me/container-apps/redis && docker compose up -d")
 
     print("\nStep 2: Creating library data directory...")
     library_dir = (

@@ -7,7 +7,7 @@ from pathlib import Path
 from conjuring.grimoire import lazy_env_variable, print_error, print_normal
 from invoke import Context, Exit, task
 
-_CONTAINER_APPS_DIR = os.environ.get("CONTAINER_APPS_DIR", "~/container-apps")
+_CONTAINER_APPS_DIR = os.environ.get("CONTAINER_APPS_DIR", "~/dev/me/container-apps")
 _COMPOSE_BASE = f"-f {Path(_CONTAINER_APPS_DIR).expanduser()}/rss/compose.yaml"
 _COMPOSE_DEV = f"{_COMPOSE_BASE} -f {Path(_CONTAINER_APPS_DIR).expanduser()}/rss/compose.override.dev.yaml"
 

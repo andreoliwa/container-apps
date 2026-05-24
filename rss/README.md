@@ -111,12 +111,8 @@ Reddit, and more — and lets me rank by **my keywords**, not social popularity.
 2. **Start TT-RSS stack** (choose your mode):
 
     ```bash
-    # Normal mode (production)
-    cd ~/container-apps
-    invoke rss-start
-
-    # OR Dev mode (local development)
-    invoke rss-start --dev
+    ca rss up         # normal mode (production)
+    ca rss up --dev   # OR dev mode (local development)
     ```
 
 3. **Access TT-RSS** on http://localhost:8002/tt-rss
@@ -149,47 +145,27 @@ This setup supports two modes of operation:
 **Starting the stack:**
 
 ```bash
-# Using invoke task (recommended)
-cd ~/container-apps
-invoke rss-start
-
-# Or manually
-docker compose -f ~/container-apps/rss/compose.yaml up -d
-docker compose -f ~/container-apps/rss/compose.yaml logs -f
+ca rss up
 ```
 
 **Stopping the stack:**
 
 ```bash
-# Using invoke task (recommended)
-cd ~/container-apps
-invoke rss-stop
-
-# Or manually
-docker compose -f ~/container-apps/rss/compose.yaml down
+ca rss down
 ```
 
 **Updating the stack:**
 
 ```bash
-# Using invoke task (recommended) - stops, pulls latest images, starts
-cd ~/container-apps
-invoke rss-start --update
-
-# Or manually
-docker compose -f ~/container-apps/rss/compose.yaml down
-docker compose -f ~/container-apps/rss/compose.yaml pull
-docker compose -f ~/container-apps/rss/compose.yaml up -d
-docker compose -f ~/container-apps/rss/compose.yaml logs -f
+ca rss up --pull   # stops, pulls latest images, starts
 ```
 
 **Installing the vf_scored plugin (Normal Mode):**
 
-The `vf_scored` plugin can be installed using the invoke command:
+The `vf_scored` plugin can be installed using:
 
 ```bash
-cd ~/container-apps
-invoke rss-setup --plugin
+ca rss setup --plugin
 ```
 
 This will clone the plugin from GitHub into the running container at `/var/www/html/tt-rss/plugins.local/vf_scored`.
@@ -213,42 +189,19 @@ Alternatively, you can use TT-RSS's built-in plugin installer through the web UI
 **Starting the stack:**
 
 ```bash
-# Using invoke task (recommended)
-cd ~/container-apps
-invoke rss-start --dev
-
-# Or manually
-docker compose -f ~/container-apps/rss/compose.yaml -f ~/container-apps/rss/compose.override.dev.yaml up -d
-docker compose -f ~/container-apps/rss/compose.yaml -f ~/container-apps/rss/compose.override.dev.yaml logs -f
+ca rss up --dev
 ```
 
 **Stopping the stack:**
 
 ```bash
-# Using invoke task (recommended)
-cd ~/container-apps
-invoke rss-stop --dev
-
-# Or manually
-docker compose -f ~/container-apps/rss/compose.yaml -f ~/container-apps/rss/compose.override.dev.yaml down
+ca rss down
 ```
 
 **Updating the stack (sync fork, rebuild):**
 
 ```bash
-# Using invoke task (recommended) - syncs fork, stops, pulls, builds, starts
-cd ~/container-apps
-invoke rss-start --update --dev
-
-# Or manually
-pushd ~/dev/tt-rss
-invoke fork.sync
-popd
-docker compose -f ~/container-apps/rss/compose.yaml -f ~/container-apps/rss/compose.override.dev.yaml down
-docker compose -f ~/container-apps/rss/compose.yaml -f ~/container-apps/rss/compose.override.dev.yaml pull
-docker compose -f ~/container-apps/rss/compose.yaml -f ~/container-apps/rss/compose.override.dev.yaml build
-docker compose -f ~/container-apps/rss/compose.yaml -f ~/container-apps/rss/compose.override.dev.yaml up -d
-docker compose -f ~/container-apps/rss/compose.yaml -f ~/container-apps/rss/compose.override.dev.yaml logs -f
+ca rss up --dev --pull   # syncs fork, stops, pulls, builds, starts
 ```
 
 **Installing plugins in Dev Mode:**
@@ -265,7 +218,7 @@ The `vf_scored` plugin should already be cloned at `${TTRSS_REPO_DIR}/plugins.lo
 ### Configured Plugins
 
 - [vf_scored](https://github.com/andreoliwa/tt-rss-plugin-vf-scored) - Custom keyword-based scoring plugin (available in
-  dev mode, installable in normal mode via `invoke rss-setup --plugin`)
+  dev mode, installable in normal mode via `ca rss setup --plugin`)
 - [ttrss-af-notifications](https://github.com/supahgreg/ttrss-af-notifications) - Adds a filter action to receive
   JavaScript-based notifications
 
@@ -301,8 +254,7 @@ See the [Usage Modes](#usage-modes) section above for detailed instructions on s
 1. Export feeds as OPML: **Preferences → Feeds → OPML export**.
 2. Stop the stack:
     ```bash
-    cd ~/container-apps
-    invoke rss-down
+    ca rss down
     ```
 3. Back up the database (source server).
     - Follow the dump instructions in [the PostgreSQL container](../postgres/README.md):
@@ -328,12 +280,11 @@ See the [Usage Modes](#usage-modes) section above for detailed instructions on s
 6. Start PostgreSQL on the new server.
     - follow the [prerequisites](#prerequisites) to export all required environment variables, then:
     ```bash
-    cd ~/container-apps
     docker compose -f postgres/compose.yml up -d
     ```
 7. Create the TT-RSS database and user:
     ```bash
-    invoke rss-setup --database
+    ca rss setup --database
     ```
 8. Restore the database dump (new server)
     - Follow the restore instructions in [the PostgreSQL container](../postgres/README.md).
@@ -370,10 +321,8 @@ See the [Usage Modes](#usage-modes) section above for detailed instructions on s
 11. Start the RSS stack (new server)
 
     ```bash
-    cd ~/container-apps
-    invoke rss-start        # normal/production mode
-    # or
-    invoke rss-start --dev  # dev mode (requires TTRSS_REPO_DIR)
+    ca rss up         # normal/production mode
+    ca rss up --dev   # dev mode (requires TTRSS_REPO_DIR)
     ```
 
     - Verify at `https://news.yourdomain.tld/tt-rss`. Re-enable plugins under **Preferences → Plugins**.
