@@ -49,7 +49,7 @@ def immich_setup(c: Context) -> None:
 
 
 @task(help={"pull": "Pull latest Immich image before starting"})
-def immich_up(c: Context, pull: bool = False) -> None:
+def immich_up(c: Context, pull: bool = False, logs: bool = False) -> None:
     """Start Redis, then the Immich stack (immich-db starts automatically)."""
     c.run("ca redis up")
 
@@ -61,7 +61,8 @@ def immich_up(c: Context, pull: bool = False) -> None:
 
     print("Starting Immich stack...")
     c.run(f"docker compose {cf} up -d")
-    c.run(f"docker compose {cf} logs -f", warn=True, pty=True)
+    if logs:
+        c.run(f"docker compose {cf} logs -f", warn=True, pty=True)
 
 
 @task(help={"output_dir": "Output directory (default: $BACKUP_DIR/<hostname>/immich)"})
