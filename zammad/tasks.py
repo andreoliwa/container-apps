@@ -18,6 +18,8 @@ import tomllib
 from conjuring.grimoire import ask_yes_no, lazy_env_variable, print_error, print_warning
 from invoke import Context, Exit, task
 
+from ca.zammad_client import ZammadAPI, ZammadAPIError
+
 # --- Constants ---
 
 ZAMMAD_DIR = Path(__file__).parent
@@ -528,80 +530,6 @@ def _overview_link(name: str) -> str:
     return slugify(name)
 
 
-class _ZammadAPIError(Exception):
-    """Raised when a Zammad API call returns a non-2xx response."""
-
-    def __init__(self, msg: str, status: int = 0) -> None:
-        super().__init__(msg)
-        self.status = status
-
-
-class _ZammadAPI:
-    def __init__(self, base_url: str, token: str, dry_run: bool = False) -> None:
-        import requests
-        from requests.adapters import HTTPAdapter
-        from urllib3.util.retry import Retry
-
-        self.base_url = base_url.rstrip("/")
-        self.session = requests.Session()
-        self.session.headers.update(
-            {
-                "Authorization": f"Token token={token}",
-                "Content-Type": "application/json",
-            }
-        )
-        retry = Retry(
-            total=4,
-            backoff_factor=1,  # sleeps 1s, 2s, 4s between retries
-            status_forcelist=[HTTPStatus.BAD_GATEWAY, HTTPStatus.SERVICE_UNAVAILABLE, HTTPStatus.GATEWAY_TIMEOUT],
-            allowed_methods={"GET", "POST", "PUT", "DELETE"},
-            raise_on_status=False,  # let callers inspect the response
-        )
-        adapter = HTTPAdapter(max_retries=retry)
-        self.session.mount("http://", adapter)
-        self.session.mount("https://", adapter)
-        self.dry_run = dry_run
-
-    def _raise_for_status(self, resp) -> None:
-        if not resp.ok:
-            msg = f"{resp.status_code} {resp.reason}: {resp.text[:300]}"
-            raise _ZammadAPIError(msg, status=resp.status_code)
-
-    def get(self, endpoint: str) -> dict:
-        resp = self.session.get(f"{self.base_url}/api/v1/{endpoint}")
-        self._raise_for_status(resp)
-        return resp.json()  # type: ignore[return-value]
-
-    def search(self, endpoint: str) -> list:
-        resp = self.session.get(f"{self.base_url}/api/v1/{endpoint}")
-        self._raise_for_status(resp)
-        result = resp.json()
-        return result if isinstance(result, list) else []
-
-    def post(self, endpoint: str, data: dict) -> dict:
-        if self.dry_run:
-            print(f"  [DRY-RUN] POST /api/v1/{endpoint}: {json.dumps(data, default=str)[:200]}")
-            return {"id": -1}
-        resp = self.session.post(f"{self.base_url}/api/v1/{endpoint}", json=data)
-        self._raise_for_status(resp)
-        return resp.json()
-
-    def put(self, endpoint: str, data: dict) -> dict:
-        if self.dry_run:
-            print(f"  [DRY-RUN] PUT /api/v1/{endpoint}: {json.dumps(data, default=str)[:200]}")
-            return {"id": -1}
-        resp = self.session.put(f"{self.base_url}/api/v1/{endpoint}", json=data)
-        self._raise_for_status(resp)
-        return resp.json()
-
-    def delete(self, endpoint: str) -> None:
-        if self.dry_run:
-            print(f"  [DRY-RUN] DELETE /api/v1/{endpoint}")
-            return
-        resp = self.session.delete(f"{self.base_url}/api/v1/{endpoint}")
-        self._raise_for_status(resp)
-
-
 def _connect_redmine_db(host: str, port: int, dbname: str, user: str, password: str) -> psycopg2.extensions.connection:
     import psycopg2
 
@@ -793,9 +721,7 @@ def _state_is_fallback(redmine_status_id: int, migration_map: dict) -> bool:
 # --- Migration steps ---
 
 
-def _resolve_and_store_states(
-    conn, api: _ZammadAPI, migration_map: dict, toml: dict, error_log: logging.Logger
-) -> None:
+def _resolve_and_store_states(conn, api: ZammadAPI, migration_map: dict, toml: dict, error_log: logging.Logger) -> None:
     """Resolve Redmine statuses → Zammad state IDs via the TOML [states] mapping.
 
     For each Redmine status, reads the `zammad_type` from TOML and picks the first
@@ -863,7 +789,7 @@ def _resolve_and_store_states(
     _save_migration_map(migration_map, api.dry_run)
 
 
-def _ensure_redmine_status_field(conn, api: _ZammadAPI, migration_map: dict, error_log: logging.Logger) -> bool:
+def _ensure_redmine_status_field(conn, api: ZammadAPI, migration_map: dict, error_log: logging.Logger) -> bool:
     """Create (or find) a 'Redmine Status' select custom field populated with all Redmine status names.
 
     Idempotent: skips creation if already recorded in migration_map.
@@ -896,7 +822,7 @@ def _ensure_redmine_status_field(conn, api: _ZammadAPI, migration_map: dict, err
     }
     try:
         result = api.post("object_manager_attributes", object_data)
-    except _ZammadAPIError as post_err:
+    except ZammadAPIError as post_err:
         all_attrs = api.get("object_manager_attributes")
         match = next(
             (a for a in all_attrs if a.get("object") == "Ticket" and a.get("name") == _REDMINE_STATUS_CF_NAME),
@@ -915,14 +841,14 @@ def _ensure_redmine_status_field(conn, api: _ZammadAPI, migration_map: dict, err
     if not api.dry_run:
         try:
             api.post("object_manager_attributes_execute_migrations", {})
-        except _ZammadAPIError as e:
+        except ZammadAPIError as e:
             error_log.error(f"redmine_status field: execute_migrations failed: {e}")
 
     return True
 
 
 def _upsert_zammad_user(
-    api: _ZammadAPI,
+    api: ZammadAPI,
     fields: dict,
     roles: list[str],
     error_log: logging.Logger,
@@ -938,7 +864,7 @@ def _upsert_zammad_user(
     email = fields["email"]
     try:
         return api.post("users", {**fields, "roles": roles})
-    except _ZammadAPIError as post_err:
+    except ZammadAPIError as post_err:
         match = None
         if email:
             by_email = api.search(f"users/search?query=email:{email}&limit=1")
@@ -956,12 +882,12 @@ def _upsert_zammad_user(
             del update["login"]
         try:
             api.put(f"users/{match['id']}", update)
-        except _ZammadAPIError as e:
+        except ZammadAPIError as e:
             error_log.error(f"{label} update after find: {e}")
         return match
 
 
-def _migrate_users(conn, api: _ZammadAPI, migration_map: dict, error_log: logging.Logger) -> None:
+def _migrate_users(conn, api: ZammadAPI, migration_map: dict, error_log: logging.Logger) -> None:
     users = _read_redmine_users(conn)
     print(f"\nMigrating {len(users)} users...")
     migrated = skipped = updated = 0
@@ -987,7 +913,7 @@ def _migrate_users(conn, api: _ZammadAPI, migration_map: dict, error_log: loggin
             try:
                 api.put(f"users/{zammad_id}", fields)
                 updated += 1
-            except _ZammadAPIError as e:
+            except ZammadAPIError as e:
                 error_log.error(f"{label} update: {e}")
             skipped += 1
             continue
@@ -1007,7 +933,7 @@ def _migrate_users(conn, api: _ZammadAPI, migration_map: dict, error_log: loggin
                 del update["login"]
             try:
                 api.put(f"users/{existing['id']}", update)
-            except _ZammadAPIError as e:
+            except ZammadAPIError as e:
                 error_log.error(f"{label} update after find: {e}")
             migration_map["users"][redmine_id] = existing["id"]
             migrated += 1
@@ -1015,7 +941,7 @@ def _migrate_users(conn, api: _ZammadAPI, migration_map: dict, error_log: loggin
 
         try:
             result = api.post("users", {**fields, "roles": ["Agent", "Customer"]})
-        except _ZammadAPIError as e:
+        except ZammadAPIError as e:
             error_log.error(f"{label}: creation failed: {e}")
             continue
         migration_map["users"][redmine_id] = result["id"]
@@ -1026,7 +952,7 @@ def _migrate_users(conn, api: _ZammadAPI, migration_map: dict, error_log: loggin
     _save_migration_map(migration_map, api.dry_run)
 
 
-def _migrate_organizations(api: _ZammadAPI, migration_map: dict, toml: dict, error_log: logging.Logger) -> None:
+def _migrate_organizations(api: ZammadAPI, migration_map: dict, toml: dict, error_log: logging.Logger) -> None:
     """Create Zammad organizations from the [organizations] table in zammad.toml.
 
     TOML format:
@@ -1061,7 +987,7 @@ def _migrate_organizations(api: _ZammadAPI, migration_map: dict, toml: dict, err
 
         try:
             result = api.post("organizations", payload)
-        except _ZammadAPIError as post_err:
+        except ZammadAPIError as post_err:
             # Already exists — find by name.
             all_orgs = api.search("organizations")
             match = next((o for o in all_orgs if o.get("name") == name), None)
@@ -1077,7 +1003,7 @@ def _migrate_organizations(api: _ZammadAPI, migration_map: dict, toml: dict, err
     _save_migration_map(migration_map, api.dry_run)
 
 
-def _migrate_customers(api: _ZammadAPI, migration_map: dict, toml: dict, error_log: logging.Logger) -> None:
+def _migrate_customers(api: ZammadAPI, migration_map: dict, toml: dict, error_log: logging.Logger) -> None:
     """Create Zammad customer accounts from the [customers] table in zammad.toml.
 
     TOML format:
@@ -1139,21 +1065,21 @@ def _migrate_customers(api: _ZammadAPI, migration_map: dict, toml: dict, error_l
     _save_migration_map(migration_map, api.dry_run)
 
 
-def _migrate_group(conn, api: _ZammadAPI, migration_map: dict, toml: dict, error_log: logging.Logger) -> None:
+def _migrate_group(conn, api: ZammadAPI, migration_map: dict, toml: dict, error_log: logging.Logger) -> None:
     import_group = toml.get("import_group", "Redmine Import")
 
     if MIGRATION_MAP_GROUP_KEY not in migration_map["groups"]:
         print(f"\nCreating group '{import_group}'...")
         try:
             result = api.post("groups", {"name": import_group, "active": True})
-        except _ZammadAPIError as post_err:
+        except ZammadAPIError as post_err:
             # Group already exists in Zammad (e.g. partial previous run) — fetch its ID by name.
             groups = api.get("groups")
             match = next((g for g in groups if g["name"] == import_group), None)
             if not match:
                 msg = f"Group '{import_group}': creation failed ({post_err}) and could not be found by name"
                 error_log.error(msg)
-                raise _ZammadAPIError(msg) from None
+                raise ZammadAPIError(msg) from None
             result = match
         migration_map["groups"][MIGRATION_MAP_GROUP_KEY] = result["id"]
         _save_migration_map(migration_map, api.dry_run)
@@ -1169,7 +1095,7 @@ def _migrate_group(conn, api: _ZammadAPI, migration_map: dict, toml: dict, error
             continue
         try:
             result = api.post("groups", {"name": tracker["name"], "parent_id": parent_group_id, "active": True})
-        except _ZammadAPIError as post_err:
+        except ZammadAPIError as post_err:
             groups = api.get("groups")
             full_name = f"{import_group}::{tracker['name']}"
             match = next((g for g in groups if g["name"] == full_name), None)
@@ -1206,7 +1132,7 @@ def _migrate_group(conn, api: _ZammadAPI, migration_map: dict, toml: dict, error
 
 
 def _migrate_custom_fields(
-    conn, api: _ZammadAPI, migration_map: dict, error_log: logging.Logger, skip_cf_id: int | None = None
+    conn, api: ZammadAPI, migration_map: dict, error_log: logging.Logger, skip_cf_id: int | None = None
 ) -> None:
     fields = _read_redmine_custom_fields(conn)
     print(f"\nMigrating {len(fields)} custom field definitions...")
@@ -1277,7 +1203,7 @@ def _migrate_custom_fields(
 
         try:
             result = api.post("object_manager_attributes", object_data)
-        except _ZammadAPIError as post_err:
+        except ZammadAPIError as post_err:
             # Field already exists — fetch all attributes and filter by object type + name.
             all_attrs = api.get("object_manager_attributes")
             match = next((a for a in all_attrs if a.get("object") == "Ticket" and a.get("name") == zammad_name), None)
@@ -1305,7 +1231,7 @@ def _migrate_custom_fields(
 
 
 def _resolve_default_customer(
-    conn, api: _ZammadAPI, toml: dict, migration_map: dict, error_log: logging.Logger
+    conn, api: ZammadAPI, toml: dict, migration_map: dict, error_log: logging.Logger
 ) -> int | None:
     """Return the Zammad user ID for default_customer_login from TOML, or None if not configured.
 
@@ -1341,7 +1267,7 @@ def _resolve_default_customer(
 
 def _migrate_tickets(
     conn,
-    api: _ZammadAPI,
+    api: ZammadAPI,
     migration_map: dict,
     toml: dict,
     tags_by_issue: dict[int, list[str]],
@@ -1367,7 +1293,7 @@ def _migrate_tickets(
     try:
         _all_zammad_states = {s["name"]: s["id"] for s in api.get("ticket_states")}
         pending_reminder_state_id: int | None = _all_zammad_states.get(_StateType.PENDING_REMINDER.value)
-    except _ZammadAPIError:
+    except ZammadAPIError:
         pending_reminder_state_id = None
 
     repaired = 0
@@ -1390,7 +1316,7 @@ def _migrate_tickets(
             try:
                 api.put(f"tickets/{zammad_id}", repair_data)
                 repaired += 1
-            except _ZammadAPIError as e:
+            except ZammadAPIError as e:
                 error_log.error(f"Issue {issue['id']} repair custom fields: {e}")
             # Backfill first-article ID if not yet recorded.
             if f"{redmine_id}_first" not in migration_map.get("articles", {}):
@@ -1501,7 +1427,7 @@ def _migrate_tickets(
     _save_migration_map(migration_map, api.dry_run)
 
 
-def _migrate_articles(conn, api: _ZammadAPI, migration_map: dict, error_log: logging.Logger) -> None:
+def _migrate_articles(conn, api: ZammadAPI, migration_map: dict, error_log: logging.Logger) -> None:
     from tqdm import tqdm
 
     print("\nMigrating journal entries → articles...")
@@ -1605,7 +1531,7 @@ def _repair_article_bodies(
         print(f"  Article bodies: {updated} updated")
 
 
-def _migrate_links(conn, api: _ZammadAPI, migration_map: dict, error_log: logging.Logger) -> None:
+def _migrate_links(conn, api: ZammadAPI, migration_map: dict, error_log: logging.Logger) -> None:
     """Create parent/child links in Zammad for Redmine issues that have a parent_id."""
     import psycopg2.extras
     from tqdm import tqdm
@@ -1838,7 +1764,7 @@ def _parse_redmine_filters(
     return condition
 
 
-def _migrate_overviews(conn, api: _ZammadAPI, migration_map: dict, _toml: dict, error_log: logging.Logger) -> None:
+def _migrate_overviews(conn, api: ZammadAPI, migration_map: dict, _toml: dict, error_log: logging.Logger) -> None:
     queries = sorted(_read_redmine_queries(conn), key=lambda q: q["name"].lower())
     print(f"\nMigrating {len(queries)} Redmine queries → Zammad overviews...")
     migrated = skipped = 0
@@ -1928,7 +1854,7 @@ def _migrate_overviews(conn, api: _ZammadAPI, migration_map: dict, _toml: dict, 
 
         try:
             result = api.post("overviews", overview_data)
-        except _ZammadAPIError as post_err:
+        except ZammadAPIError as post_err:
             # 422 means invalid conditions — retry with a catch-all and warn.
             # Any other error: check if it already exists (duplicate name on a previous run).
             if post_err.status == HTTPStatus.UNPROCESSABLE_ENTITY:
@@ -1938,7 +1864,7 @@ def _migrate_overviews(conn, api: _ZammadAPI, migration_map: dict, _toml: dict, 
                 overview_data["condition"] = {"ticket.state_id": {"operator": "is", "value": all_state_ids}}
                 try:
                     result = api.post("overviews", overview_data)
-                except _ZammadAPIError as retry_err:
+                except ZammadAPIError as retry_err:
                     all_overviews = api.search("overviews")
                     match = next((o for o in all_overviews if o.get("name") == query["name"]), None)
                     if not match:
@@ -1962,7 +1888,7 @@ def _migrate_overviews(conn, api: _ZammadAPI, migration_map: dict, _toml: dict, 
     _save_migration_map(migration_map, api.dry_run)
 
 
-def _run_migration(conn, api: _ZammadAPI, migration_map: dict, toml: dict, error_log: logging.Logger) -> None:
+def _run_migration(conn, api: ZammadAPI, migration_map: dict, toml: dict, error_log: logging.Logger) -> None:
     """Run all migration steps in order."""
     # Tags can come from a plugin table or from a list-type custom field (name configured in TOML).
     tags_cf_name: str = toml.get("tags_custom_field", "")
@@ -2065,7 +1991,7 @@ def zammad_migrate(
 
     error_log, error_counter = _setup_error_logging()
     migration_map = _load_migration_map()
-    api = _ZammadAPI(zammad_url, zammad_token, dry_run=dry_run)
+    api = ZammadAPI(zammad_url, zammad_token, dry_run=dry_run)
 
     print(f"Connecting to Redmine DB at {redmine_db_host}:{redmine_db_port}/{redmine_db_name}...")
     conn = _connect_redmine_db(redmine_db_host, redmine_db_port, redmine_db_name, redmine_db_user, redmine_db_pass)
